@@ -835,6 +835,25 @@ def get_dashboard_data(supplier: str) -> dict:
     }
 
 
+_SUP_PALETTE = ["#6c7cff", "#56cf8e", "#ff6b6b", "#4ecdc4", "#c77dff",
+                "#ff9f43", "#f4a261", "#38bdf8", "#fb7185", "#34d399",
+                "#facc15", "#a78bfa", "#2dd4bf", "#f472b6"]
+
+
+def _supplier_colours(suppliers: list[str]) -> dict[str, str]:
+    """Config colour if set, else a distinct palette colour per supplier so the
+    By-Supplier views don't render every supplier in the same default blue."""
+    out: dict[str, str] = {}
+    i = 0
+    for s in suppliers:
+        c = load_config(s, CONFIGS_DIR).dashboard.get("color")
+        if not c:
+            c = _SUP_PALETTE[i % len(_SUP_PALETTE)]
+            i += 1
+        out[s] = c
+    return out
+
+
 def get_multi_dashboard_data(suppliers: list[str]) -> dict:
     all_invoices: list[dict] = []
     all_items: list[dict] = []
@@ -842,11 +861,18 @@ def get_multi_dashboard_data(suppliers: list[str]) -> dict:
     meta: list[dict] = []
 
     svc_by_sup: dict = {}
+    colours = _supplier_colours(suppliers)
     for supplier in suppliers:
         d = get_dashboard_data(supplier)
+        col = colours[supplier]
+        d["color"] = col
+        for _it in d["items"]:
+            _it["supplier_color"] = col
+        for _inv in d["invoices"]:
+            _inv["supplier_color"] = col
         all_invoices.extend(d["invoices"])
         all_items.extend(d["items"])
-        meta.append({"display_name": d["display_name"], "color": d["color"]})
+        meta.append({"display_name": d["display_name"], "color": col})
         svc_by_sup[d["display_name"]] = d["svc"]
 
         cfg = load_config(supplier, CONFIGS_DIR)
@@ -861,7 +887,7 @@ def get_multi_dashboard_data(suppliers: list[str]) -> dict:
                 row["comment"] = ""
                 row["supplier"] = supplier
                 row["supplier_name"] = d["display_name"]
-                row["supplier_color"] = d["color"]
+                row["supplier_color"] = col
                 row["department"] = inv_dept_by_id.get(row.get("invoice_id")) or "Unknown"
                 all_items_with_drp.append(row)
 

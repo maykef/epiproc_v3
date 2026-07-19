@@ -223,6 +223,18 @@ def _tab_toggle_js() -> str:
         "if(!act||act.style.display==='none'){"
         "var vis=Array.prototype.filter.call(document.querySelectorAll('nav .tab'),"
         "function(t){return t.style.display!=='none';});if(vis.length)vis[0].click();}"
+        # Department off => strip Department/Sub-dept columns + filters from EVERY
+        # table (they leak into By Category, Invoices, etc.), re-run after each
+        # tab switch since those tables render lazily.
+        "if(EN.indexOf('departments')===-1){var hideDept=function(){"
+        "['inv-dept','li-dept'].forEach(function(id){var e=document.getElementById(id);if(e)e.style.display='none';});"
+        "document.querySelectorAll('table').forEach(function(tbl){"
+        "tbl.querySelectorAll('thead th').forEach(function(th,idx){"
+        "var t=th.textContent.replace(/[^a-z-]/gi,'').toLowerCase();"
+        "if(t==='department'||t==='sub-dept'){th.style.display='none';"
+        "tbl.querySelectorAll('tbody tr').forEach(function(tr){var c=tr.children[idx];if(c)c.style.display='none';});}});});};"
+        "hideDept();var _sp=window.showPage;if(typeof _sp==='function'){"
+        "window.showPage=function(){var r=_sp.apply(this,arguments);setTimeout(hideDept,0);return r;};}}"
         "});</script>"
     )
 
