@@ -1189,7 +1189,7 @@ function buildTreemap(){
       btn.style.cssText = 'font-size:11px;padding:3px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--accent);border-radius:5px;cursor:pointer';
       btn.onclick = () => { drillState = null; render(); };
       const lbl = document.createElement('span');
-      lbl.textContent = drillState + ' · Departments';
+      lbl.textContent = drillState + ' · Categories';
       lbl.style.cssText = 'font-size:12px;font-weight:600;color:var(--text)';
       bar.appendChild(btn);
       bar.appendChild(lbl);
@@ -1199,25 +1199,26 @@ function buildTreemap(){
     // ── aggregate (noise filtered) ────────────────────────────────────────
     let hierData;
     if(!drillState){
-      const catMap = {};
+      // top level: the total, split by supplier
+      const supMap = {};
       its.forEach(i => {
-        const c = i.category||'';
-        if(NOISE.has(c.toLowerCase())) return;
-        catMap[c] = (catMap[c]||0) + i.total_price;
+        const s = i.supplier_name||'Unknown';
+        supMap[s] = (supMap[s]||0) + i.total_price;
       });
       hierData = {name:'root', children:
-        Object.entries(catMap).map(([name, value]) => ({name, value}))
+        Object.entries(supMap).map(([name, value]) => ({name, value}))
       };
     } else {
-      const deptMap = {};
-      its.filter(i => (i.category||'') === drillState)
+      // drill: category breakdown within the clicked supplier
+      const catMap = {};
+      its.filter(i => (i.supplier_name||'') === drillState)
          .forEach(i => {
-           const d = i.department||'';
-           if(NOISE.has(d.toLowerCase())) return;
-           deptMap[d] = (deptMap[d]||0) + i.total_price;
+           const c = i.category||'';
+           if(NOISE.has(c.toLowerCase())) return;
+           catMap[c] = (catMap[c]||0) + i.total_price;
          });
       hierData = {name:'root', children:
-        Object.entries(deptMap).map(([name, value]) => ({name, value}))
+        Object.entries(catMap).map(([name, value]) => ({name, value}))
       };
     }
 
@@ -1233,8 +1234,11 @@ function buildTreemap(){
     // ── color ─────────────────────────────────────────────────────────────
     // Top level: per-category brand colour; drill level: distinct palette per dept
     function nodeColor(d, idx){
-      if(!drillState) return CAT_COLOR[d.data.name]||'#6c7cff';
-      return DRILL_PALETTE[idx % DRILL_PALETTE.length];
+      if(!drillState){
+        const s = (typeof SUP_TOTALS!=='undefined') ? SUP_TOTALS.find(x=>x.display===d.data.name) : null;
+        return (s && s.color) || DRILL_PALETTE[idx % DRILL_PALETTE.length];
+      }
+      return CAT_COLOR[d.data.name] || DRILL_PALETTE[idx % DRILL_PALETTE.length];
     }
 
     const svg = d3.select(wrap).append('svg')
