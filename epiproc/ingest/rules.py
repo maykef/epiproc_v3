@@ -1,38 +1,71 @@
 """Declarative corrections engine — replaces v1's ~28 hardcoded correct_* branches.
 
-In v1 a supplier quirk was imperative Python doing SQL UPDATEs on inserted rows
-(re-querying SUM(total_price) between steps). Here a quirk is DATA in the
-supplier YAML, e.g.:
+An op is a small pure function: record -> (record, note|None). Ops are chosen by
+name; a supplier's YAML lists which to run (under `rules:`), plus a universal
+default set. No SQL surgery, no `if supplier == ...`, fully testable.
 
-    rules:
-      - op: flip_sign_if
-        when: document_type == "Credit Note"
-        fields: [total_amount, subtotal]
-      - op: scale
-        when: multi_year
-        factor: "1/years"
-        fields: [unit_price, total_price, line_discount_amount]
-      - op: derive_total_from_subtotal      # Sartorius S2 safety net
-        when: total_amount is null and subtotal is not null
-      - op: suppress_check
-        check: C4
-
-Each op is a small pure function (record in -> record out + an applied-note
-string). No SQL surgery, no per-supplier if-branches, fully portable and testable.
-The generic ops that v1 ran on EVERY supplier become opt-in per config, killing
-the "generic correction mis-fires on another supplier" risk.
+This is the seed set. Each v1 correct_* becomes one op here as extraction is
+validated supplier by supplier.
 """
 from __future__ import annotations
 
+from typing import Callable
+
+_OPS: dict[str, Callable[[dict], tuple[dict, str | None]]] = {}
+
+
+def op(name: str):
+    def reg(fn):
+        _OPS[name] = fn
+        return fn
+    return reg
+
+
+def _is_credit(rec: dict) -> bool:
+    return "credit" in (rec.get("document_type") or "").lower()
+
+
+@op("credit_note_sign")
+def _credit_note_sign(rec: dict) -> tuple[dict, str | None]:
+    """Credit notes carry negative value. Ensure totals + line prices are negative."""
+    if not _is_credit(rec):
+        return rec, None
+    changed = False
+    tot = rec.get("totals") or {}
+    for k in ("subtotal", "total", "discount_amount", "vat_amount"):
+        v = tot.get(k)
+        if isinstance(v, (int, float)) and v > 0:
+            tot[k] = -abs(v); changed = True
+    for it in rec.get("line_items") or []:
+        for k in ("unit_price", "total_price"):
+            v = it.get(k)
+            if isinstance(v, (int, float)) and v > 0:
+                it[k] = -abs(v); changed = True
+    return rec, ("credit_note_sign: flipped to negative" if changed else None)
+
+
+@op("derive_total_from_subtotal")
+def _derive_total(rec: dict) -> tuple[dict, str | None]:
+    """Safety net (v1 S2): total null but subtotal present -> use subtotal."""
+    tot = rec.get("totals") or {}
+    if tot.get("total") is None and isinstance(tot.get("subtotal"), (int, float)):
+        tot["total"] = tot["subtotal"]
+        return rec, f"derive_total: total={tot['subtotal']} from subtotal"
+    return rec, None
+
+
+DEFAULT_RULES = ["credit_note_sign", "derive_total_from_subtotal"]
+
 
 def apply_rules(record: dict, cfg) -> tuple[dict, list[str]]:  # noqa: ANN001
-    """Apply the supplier's declarative rule list to one extracted record.
-
-    STUB. Build order:
-      1. Define the op vocabulary (flip_sign_if, scale, derive_*, drop_item_if,
-         merge_bundle, suppress_check, ...) as a registry of pure functions.
-      2. Translate each v1 correct_* into one or more ops; attach to the right
-         supplier YAML under `rules:`.
-      3. Return (corrected_record, applied_notes) — notes go to corrections_applied.
-    """
-    return record, []
+    """Run the default universal ops + any op names listed in the supplier YAML."""
+    names = DEFAULT_RULES + [r for r in getattr(cfg, "rules", []) if isinstance(r, str)]
+    notes: list[str] = []
+    for name in names:
+        fn = _OPS.get(name)
+        if fn is None:
+            continue
+        record, note = fn(record)
+        if note:
+            notes.append(note)
+    return record, notes
