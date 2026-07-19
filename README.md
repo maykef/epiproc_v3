@@ -18,24 +18,28 @@ cd /mnt/nvme8tb/customers/acme && docker compose up -d
 # -> migrations run, empty dashboard at :5011. Drop PDFs, run process.
 ```
 
-## What's built vs stubbed (skeleton state)
+## Status (2026-07-19)
+
+Working end-to-end and live on a first real customer instance (`floral_portal`).
 
 | Area | State |
 |------|-------|
-| settings / db pool / migrations / job queue / worker loop | authored |
-| dashboard template + admin templates | copied from v1 (empty until data) |
-| `ingest/dedup.py`, `ingest/verify.py`, `normalisation.py` | copied from v1 (needs import rewiring) |
-| `ingest/pdf_vlm.py` (guided-JSON extraction) | **STUB — the one true rewrite** |
-| `ingest/rules.py` (declarative corrections) | **STUB** |
-| `ingest/categorise.py` | **STUB — port from retired generate_dashboard_v5.py** |
-| web routers / auth / admin (full port) | pending |
+| Engine image `epiproc:3` + per-customer container (app + Postgres sidecar) | ✅ done |
+| **Extraction** — `ingest/pdf_vlm.py` per-page vision + guided JSON (`response_format` json_schema) | ✅ done |
+| **Rules** — `ingest/rules.py` declarative ops (credit-note sign, derive-total, drop HS-code summary) | ✅ done |
+| **Categorisation** — `ingest/categorise.py` two-level **category + variety**, per-customer scheme, worker job | ✅ done |
+| Web / auth / admin / dashboard plane (single-DB port) | ✅ done |
+| Per-customer settings (tabs, currency, price-tracker mode, scheme) + **Admin → Dashboard** editor | ✅ done |
+| Dashboard: tab/KPI/column toggles, supplier colours, chart drill-downs, supplier treemap | ✅ done |
+| `ingest/dedup.py`, `ingest/verify.py` | copied from v1, not yet wired into the job pipeline |
+| Process invoices **as a queue job** (worker handles `categorise`, not yet `extract`/`onboard`) | pending |
+| **Reports** engine (`epiproc/reports/`, `/reports` router, report jobs) | **not built (P4)** |
+| Extraction truncation-retry; prod hardening (secure cookies, self-service pw); tests/CI | pending |
 
-## Build order
-1. Skeleton (this) — empty dashboard + plumbing + stubs.
-2. **P2 extraction** — `pdf_vlm` (response_format json_schema) + `rules`; wire
-   dedup/verify. Milestone: drop PDFs → rows appear.
-3. **P3 categorise + search + dashboard data** — port categoriser; PG FTS.
-4. **P4 reports** — port the agentic report loop.
-5. Full web/auth/admin port; tests; CI.
+## Per-customer customisation (one image, no forks)
+Everything customer-specific lives in that container's own Postgres, editable from
+**Admin → Dashboard** (admin-only): visible **tabs**, **currency**, **Price Tracker
+grouping** (article / category / variety), and the **categorisation scheme** (e.g. a
+flower buyer categorises by flower type). Changing these needs no rebuild.
 
 See `docs/AUDIT.md` for the keep/rewrite/drop verdicts this repo is built from.
