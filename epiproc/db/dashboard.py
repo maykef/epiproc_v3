@@ -222,7 +222,7 @@ _INVOICES_SQL = """
 _ITEMS_SQL_BASE = """
     SELECT
         ii.id, ii.invoice_id, ii.description, ii.article,
-        ii.quantity, ii.unit, ii.unit_price, ii.total_price, ii.category,
+        ii.quantity, ii.unit, ii.unit_price, ii.total_price, ii.category, ii.variety,
         i.invoice_number, i.invoice_date, i.currency, i.buyer_name,
         i.buyer_department, i.buyer_address, i.notes, i.document_type,
         i.filename, i.total_amount, i.seller_name, i.subscription_start,

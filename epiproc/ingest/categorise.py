@@ -19,34 +19,48 @@ from epiproc.settings import settings
 
 def _schema() -> dict:
     return {"type": "json_schema", "json_schema": {
-        "name": "categories", "strict": True,
+        "name": "classification", "strict": True,
         "schema": {
             "type": "object",
-            "properties": {"categories": {"type": "array", "items": {"type": "string"}}},
-            "required": ["categories"], "additionalProperties": False,
+            "properties": {"items": {"type": "array", "items": {
+                "type": "object",
+                "properties": {"category": {"type": "string"}, "variety": {"type": "string"}},
+                "required": ["category", "variety"], "additionalProperties": False,
+            }}},
+            "required": ["items"], "additionalProperties": False,
         },
     }}
 
 
-def _categorise_descriptions(client: OpenAI, model: str, descriptions: list[str], scheme: str) -> list[str]:
+def _categorise_descriptions(client: OpenAI, model: str, descriptions: list[str], scheme: str) -> list[tuple[str, str]]:
     lines = "\n".join(f"{i + 1}. {d or '(no description)'}" for i, d in enumerate(descriptions))
     prompt = (
         f"{scheme}\n\n"
-        f"Classify each of the following {len(descriptions)} line items. Return JSON "
-        f"with a 'categories' array of exactly {len(descriptions)} short strings, one "
-        f"per item, in the same order.\n\nItems:\n{lines}"
+        f"For each of the following {len(descriptions)} line items return an object with:\n"
+        f"- 'category': the SPECIFIC flower type / product class from the scheme above "
+        f"(e.g. Roses, Peonies, Chrysanthemums, Orchids, Lisianthus, Anthuriums, Plants, "
+        f"Deposit, Pallet, Packaging, Freight). NEVER use an umbrella term like 'Cut flowers'.\n"
+        f"- 'variety': the specific cultivar/product within that type (e.g. 'Avalanche', "
+        f"'Kenyan', 'Star Roses Mixed', 'Rosita White', 'Phalaenopsis'); if there is no "
+        f"distinct variety, repeat the category.\n"
+        f"Return JSON with an 'items' array of exactly {len(descriptions)} objects, in order."
+        f"\n\nItems:\n{lines}"
     )
     r = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.0, max_tokens=1500,
+        temperature=0.0, max_tokens=2500,
         response_format=_schema(),
         extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
-    cats = json.loads(r.choices[0].message.content).get("categories", [])
-    # pad/truncate to match item count so zip is safe
-    cats = (cats + ["Other"] * len(descriptions))[:len(descriptions)]
-    return [c.strip() or "Other" for c in cats]
+    got = json.loads(r.choices[0].message.content).get("items", [])
+    got = (got + [{}] * len(descriptions))[:len(descriptions)]
+    out = []
+    for g in got:
+        cat = (g.get("category") or "Other").strip() or "Other"
+        var = (g.get("variety") or cat).strip() or cat
+        out.append((cat, var))
+    return out
 
 
 def categorise_all(only_uncategorised: bool = True, progress=None) -> int:
@@ -74,8 +88,9 @@ def categorise_all(only_uncategorised: bool = True, progress=None) -> int:
                 if progress:
                     progress(f"invoice {inv_id}: error {e}")
                 continue
-            for it, c in zip(items, cats):
-                conn.execute("UPDATE invoice_items SET category=%s WHERE id=%s", (c, it["id"]))
+            for it, (cat, var) in zip(items, cats):
+                conn.execute("UPDATE invoice_items SET category=%s, variety=%s WHERE id=%s",
+                             (cat, var, it["id"]))
             conn.commit()
             done += len(items)
             if progress:

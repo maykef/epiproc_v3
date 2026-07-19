@@ -101,8 +101,9 @@ def set_currency_symbol(sym: str) -> None:
 # category (e.g. a flower buyer tracks Roses/Chrysanthemums price trends across
 # suppliers), which turns many one-off lines into a few meaningful trend lines.
 def get_price_tracker_key() -> str:
-    return "category" if get_setting("price_tracker_key") == "category" else "article"
+    v = get_setting("price_tracker_key")
+    return v if v in ("category", "variety") else "article"
 
 
 def set_price_tracker_key(key: str) -> None:
-    set_setting("price_tracker_key", "category" if key == "category" else "article")
+    set_setting("price_tracker_key", key if key in ("category", "variety") else "article")

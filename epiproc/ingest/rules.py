@@ -9,9 +9,11 @@ validated supplier by supplier.
 """
 from __future__ import annotations
 
+import re
 from typing import Callable
 
 _OPS: dict[str, Callable[[dict], tuple[dict, str | None]]] = {}
+_HS_CODE = re.compile(r"^\s*\d{8}\s*$")
 
 
 def op(name: str):
@@ -23,6 +25,23 @@ def op(name: str):
 
 def _is_credit(rec: dict) -> bool:
     return "credit" in (rec.get("document_type") or "").lower()
+
+
+@op("drop_hs_summary")
+def _drop_hs_summary(rec: dict) -> tuple[dict, str | None]:
+    """Drop customs/commodity-summary lines (description is a bare 8-digit HS
+    code, e.g. 06031100). Some suppliers (e.g. Dutch flower exporters) repeat the
+    whole invoice as an HS-code summary on a later page; counting both double-
+    counts spend. A genuine product description is never just an 8-digit number.
+    """
+    items = rec.get("line_items") or []
+    kept = [it for it in items
+            if not (isinstance(it, dict) and _HS_CODE.match(str(it.get("description") or "")))]
+    dropped = len(items) - len(kept)
+    if dropped:
+        rec["line_items"] = kept
+        return rec, f"drop_hs_summary: removed {dropped} customs-code summary line(s)"
+    return rec, None
 
 
 @op("credit_note_sign")
@@ -54,7 +73,7 @@ def _derive_total(rec: dict) -> tuple[dict, str | None]:
     return rec, None
 
 
-DEFAULT_RULES = ["credit_note_sign", "derive_total_from_subtotal"]
+DEFAULT_RULES = ["drop_hs_summary", "credit_note_sign", "derive_total_from_subtotal"]
 
 
 def apply_rules(record: dict, cfg) -> tuple[dict, list[str]]:  # noqa: ANN001
