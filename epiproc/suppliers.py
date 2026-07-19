@@ -34,7 +34,16 @@ def configs_dir() -> pathlib.Path:
 
 def load_config(supplier: str, configs: pathlib.Path | None = None) -> SupplierConfig:
     d = configs or _REPO_CONFIGS
-    data = yaml.safe_load((d / f"{supplier}.yml").read_text())
+    path = d / f"{supplier}.yml"
+    if not path.exists():
+        # Blank-slate default: suppliers discovered from data need no hand-written
+        # config to appear on the dashboard. Extraction uses the generic engine;
+        # display name is derived; credit-note totals are already signed at extract.
+        return SupplierConfig(
+            supplier=supplier, extraction_prompt="", continuation_prompt="",
+            dashboard={"display_name": supplier.replace("_", " ").title()},
+        )
+    data = yaml.safe_load(path.read_text())
     return SupplierConfig(
         supplier=data.get("supplier", supplier),
         extraction_prompt=data.get("extraction_prompt", ""),

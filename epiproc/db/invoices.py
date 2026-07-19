@@ -21,26 +21,34 @@ def insert_record(conn, supplier: str, filename: str, record: dict,
     buyer = rec.get("buyer") or {}
     ship = rec.get("ship_to") or {}
     sold = rec.get("sold_to") or {}
+    refs = rec.get("references") or {}
 
-    # replace prior rows for this (supplier, filename)
     conn.execute("DELETE FROM invoices WHERE supplier=%s AND filename=%s", (supplier, filename))
     row = conn.execute(
         """INSERT INTO invoices
            (supplier, filename, document_type, invoice_number, invoice_date, currency,
-            seller_name, buyer_name, buyer_dept, ship_to_name, sold_to_name,
-            subtotal, discount_amount, discount_2, freight, handling_charges, vat_amount,
-            total_amount, notes, corrections_applied, raw_json, extraction_error,
-            processing_time_s, status)
-           VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s)
+            seller_name, buyer_name, buyer_department, buyer_address, buyer_customer_number,
+            ship_to_name, ship_to_department, ship_to_address,
+            sold_to_name, sold_to_department, sold_to_address,
+            your_reference, order_reference, payment_terms,
+            subtotal, discount_rate_percent, discount_amount, discount_2,
+            freight, handling_charges, vat_amount, total_amount,
+            notes, corrections_applied, raw_json, extraction_error, processing_time_s, status)
+           VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,
+                   %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s,%s,%s)
            RETURNING id""",
         (supplier, filename, rec.get("document_type"), rec.get("invoice_number"),
          rec.get("invoice_date"), rec.get("currency"),
          seller.get("name"), buyer.get("name"), buyer.get("department"),
-         ship.get("name"), sold.get("name"),
-         _num(tot.get("subtotal")), _num(tot.get("discount_amount")), _num(tot.get("discount_2")),
-         _num(tot.get("freight")), _num(tot.get("handling_charges")), _num(tot.get("vat_amount")),
-         _num(tot.get("total")), rec.get("notes"),
-         "; ".join(corrections) if corrections else None,
+         buyer.get("address"), buyer.get("customer_number"),
+         ship.get("name"), ship.get("department"), ship.get("address"),
+         sold.get("name"), sold.get("department"), sold.get("address"),
+         refs.get("your_reference"), refs.get("order_reference"), rec.get("payment_terms"),
+         _num(tot.get("subtotal")), _num(tot.get("discount_rate_percent")),
+         _num(tot.get("discount_amount")), _num(tot.get("discount_2")),
+         _num(tot.get("freight")), _num(tot.get("handling_charges")),
+         _num(tot.get("vat_amount")), _num(tot.get("total")),
+         rec.get("notes"), "; ".join(corrections) if corrections else None,
          json.dumps(rec, ensure_ascii=False), error, processing_time_s, status),
     ).fetchone()
     inv_id = row["id"]

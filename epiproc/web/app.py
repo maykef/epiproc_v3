@@ -1,19 +1,29 @@
-"""Minimal bootable FastAPI app for the skeleton.
+"""Full FastAPI app for the EpiProc v3 engine web plane.
 
-Boots, runs migrations, exposes /health, and renders the EMPTY dashboard so the
-engine-in-a-box milestone (fresh container -> login -> empty dashboard) can be
-demonstrated. Auth/admin/full-dashboard routers are ported in the next step.
+Ported from v1 dashboard_app/api/main.py. Single-DB: one container == one
+customer == one Postgres. On startup it runs migrations and opens the pool; on
+shutdown it closes the pool. The middleware stack (security headers, CSRF,
+audit, metrics, CORS) and routers are the v1 set minus the unauthenticated JSON
+data routers and reports/services/search (out of scope for this port).
 """
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from epiproc import __version__
 from epiproc.db.pool import close_pool, init_pool, run_migrations
 from epiproc.settings import settings
+from epiproc.web.metrics import MetricsMiddleware, metrics_response
+from epiproc.web.security import (
+    limiter, SecurityHeadersMiddleware, AuditMiddleware, CSRFMiddleware,
+)
+from epiproc.web.routers import admin, dashboard, login, reset, usage
+from epiproc.web.routers import health as health_router
 
 
 @asynccontextmanager
@@ -26,29 +36,44 @@ async def lifespan(app: FastAPI):
     close_pool()
 
 
-app = FastAPI(title="EpiProc v3 engine", version=__version__, docs_url=None, redoc_url=None, lifespan=lifespan)
+app = FastAPI(
+    title="EpiProc v3 engine",
+    version=__version__,
+    docs_url=None,
+    redoc_url=None,
+    lifespan=lifespan,
+)
+
+# Rate limiter state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Middleware stack (bottom-to-top execution: security headers → CSRF → audit → metrics → CORS)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(CSRFMiddleware)
+app.add_middleware(AuditMiddleware)
+app.add_middleware(MetricsMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5001", "http://127.0.0.1:5001"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["*"],
+)
+
+# Routers
+app.include_router(login.router)
+app.include_router(reset.router)
+app.include_router(admin.router)
+app.include_router(dashboard.router)
+app.include_router(usage.router)
+app.include_router(health_router.router)
 
 
-@app.get("/health")
-def health() -> JSONResponse:
-    return JSONResponse({"status": "ok", "version": __version__, "institution": settings.institution})
+@app.get("/health", tags=["health"])
+def health():
+    return {"status": "ok", "version": __version__, "institution": settings.institution}
 
 
-@app.get("/health/ready")
-def ready() -> JSONResponse:
-    try:
-        with init_pool().connection() as conn:
-            conn.execute("SELECT 1")
-        return JSONResponse({"status": "ready"})
-    except Exception as e:  # noqa: BLE001
-        return JSONResponse({"status": "degraded", "error": str(e)}, status_code=503)
-
-
-@app.get("/", response_class=HTMLResponse)
-def home() -> str:
-    # Placeholder until the full dashboard router is ported. The real template
-    # (dashboard_template.html) is already in web/templates/, rendered empty.
-    return (
-        f"<h1>EpiProc v3 — {settings.institution}</h1>"
-        "<p>Engine online. No data yet. Drop invoices and run <code>process</code>.</p>"
-    )
+@app.get("/metrics", include_in_schema=False)
+def metrics():
+    return metrics_response()

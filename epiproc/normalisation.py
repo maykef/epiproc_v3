@@ -26,8 +26,8 @@ def load_dept_entries(configs_dir: Optional[Path] = None) -> list:
     cached = _DEPT_ENTRIES_CACHE.get(cdir)
     if cached is not None:
         return cached
-    with open(cdir / "departments.yml") as f:
-        entries = yaml.safe_load(f) or []
+    path = cdir / "departments.yml"
+    entries = (yaml.safe_load(path.read_text()) or []) if path.exists() else []
     _DEPT_ENTRIES_CACHE[cdir] = entries
     return entries
 
