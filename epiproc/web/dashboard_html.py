@@ -214,6 +214,11 @@ def _tab_toggle_js() -> str:
         f"{json.dumps(_ALL)}.forEach(function(k){{"
         "if(EN.indexOf(k)===-1){var p=document.getElementById('page-'+k);"
         "if(p){p.style.display='none';p.classList.remove('active');}}});"
+        # Overview KPI tiles tied to a tab disappear with it (e.g. Top Department).
+        "var KPI={departments:'kpi-top-dept',categories:'kpi-top-cat'};"
+        "Object.keys(KPI).forEach(function(k){"
+        "if(EN.indexOf(k)===-1){var e=document.getElementById(KPI[k]);"
+        "var tile=e&&e.closest('.kpi');if(tile)tile.style.display='none';}});"
         "var act=document.querySelector('nav .tab.active');"
         "if(!act||act.style.display==='none'){"
         "var vis=Array.prototype.filter.call(document.querySelectorAll('nav .tab'),"
