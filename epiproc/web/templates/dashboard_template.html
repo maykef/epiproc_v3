@@ -1446,6 +1446,7 @@ let PT_SORT_KEY='appearances', PT_SORT_DIR=-1;
 const PT_PS=50;
 
 function _ptKey(it){
+  if(window.PT_GROUP==='category') return (it.category||'').trim();
   const a=(it.article||'').trim();
   return a ? a : (it.description||'').toLowerCase().trim();
 }
@@ -1465,11 +1466,12 @@ function buildPriceTracker(){
   its.forEach(it=>{
     const key=_ptKey(it);
     if(!key)return;
-    const gk=key+'|||'+it.supplier_name;
+    const byCat=window.PT_GROUP==='category';
+    const gk=byCat ? key : key+'|||'+it.supplier_name;
     if(!groups[gk]) groups[gk]={
-      item_key:key, article:(it.article||'').trim(),
-      description:it.description||'', category:it.category,
-      supplier:it.supplier_name, supplier_color:it.supplier_color||'#aaa',
+      item_key:key, article:byCat ? '' : (it.article||'').trim(),
+      description:byCat ? (it.category||'') : (it.description||''), category:it.category,
+      supplier:byCat ? 'All suppliers' : it.supplier_name, supplier_color:it.supplier_color||'#aaa',
       occurrences:[]
     };
     groups[gk].occurrences.push({

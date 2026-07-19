@@ -94,3 +94,15 @@ def get_currency_symbol() -> str:
 
 def set_currency_symbol(sym: str) -> None:
     set_setting("currency_symbol", sym)
+
+
+# ── Price Tracker grouping (per customer) ────────────────────────────────────
+# "article" (default): track each SKU/article over time. "category": track by
+# category (e.g. a flower buyer tracks Roses/Chrysanthemums price trends across
+# suppliers), which turns many one-off lines into a few meaningful trend lines.
+def get_price_tracker_key() -> str:
+    return "category" if get_setting("price_tracker_key") == "category" else "article"
+
+
+def set_price_tracker_key(key: str) -> None:
+    set_setting("price_tracker_key", "category" if key == "category" else "article")
