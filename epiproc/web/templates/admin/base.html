@@ -78,6 +78,7 @@ details[open] summary{margin-bottom:16px}
   <a href="/admin/audit" {% if request.url.path.startswith('/admin/audit') %}style="color:var(--text);font-weight:600"{% endif %}>Audit</a>
   <a href="/admin/usage" {% if request.url.path.startswith('/admin/usage') %}style="color:var(--text);font-weight:600"{% endif %}>Usage</a>
   <a href="/admin/services" {% if request.url.path.startswith('/admin/services') %}style="color:var(--text);font-weight:600"{% endif %}>Services</a>
+  <a href="/admin/dashboard" {% if request.url.path.startswith('/admin/dashboard') %}style="color:var(--text);font-weight:600"{% endif %}>Dashboard</a>
   <span style="flex:1"></span>
   <span style="color:var(--muted)" aria-label="Signed in as {{ me }}">{{ me }}</span>
   <a href="/logout">Sign out</a>

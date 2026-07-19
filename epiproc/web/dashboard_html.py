@@ -194,11 +194,40 @@ def _inline_data(data: dict) -> str:
     )
 
 
+def _tab_toggle_js() -> str:
+    """Hide nav tabs + panels the admin has switched off for this customer.
+
+    The tab set lives in this instance's own DB (admin panel → Dashboard). If
+    everything is on, this is a no-op. Applies to admins and viewers alike — the
+    admin changes the set in /admin/dashboard, everyone sees the result.
+    """
+    from epiproc.db.settings import _ALL, get_enabled_tabs
+    enabled = get_enabled_tabs()
+    if set(enabled) == set(_ALL):
+        return ""
+    return (
+        "<script>document.addEventListener('DOMContentLoaded',function(){"
+        f"var EN={json.dumps(enabled)};"
+        "document.querySelectorAll('nav .tab').forEach(function(t){"
+        "var m=(t.getAttribute('onclick')||'').match(/showPage\\('([a-z]+)'/);"
+        "if(m&&EN.indexOf(m[1])===-1)t.style.display='none';});"
+        f"{json.dumps(_ALL)}.forEach(function(k){{"
+        "if(EN.indexOf(k)===-1){var p=document.getElementById('page-'+k);"
+        "if(p){p.style.display='none';p.classList.remove('active');}}});"
+        "var act=document.querySelector('nav .tab.active');"
+        "if(!act||act.style.display==='none'){"
+        "var vis=Array.prototype.filter.call(document.querySelectorAll('nav .tab'),"
+        "function(t){return t.style.display!=='none';});if(vis.length)vis[0].click();}"
+        "});</script>"
+    )
+
+
 def _apply(template: str, subs: dict) -> str:
     for k, v in subs.items():
         template = template.replace(k, v)
     template = template.replace("</nav>", _LOGOUT_BTN, 1)
     template = template.replace(_TEMPLATE_BRAND, settings.institution)
+    template = template.replace("</body>", _tab_toggle_js() + "</body>", 1)
     return template
 
 

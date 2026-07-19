@@ -91,6 +91,30 @@ def admin_users(request: Request, ok: str = "", err: str = ""):
     })
 
 
+@router.get("/admin/dashboard")
+def admin_dashboard(request: Request, saved: str = ""):
+    me = _admin(request)
+    from epiproc.db.settings import DASHBOARD_TABS, get_enabled_tabs
+    enabled = get_enabled_tabs()
+    return templates.TemplateResponse(request, "admin/dashboard.html", {
+        "me": me["username"],
+        "tabs": [{"key": k, "label": lbl, "on": k in enabled} for k, lbl in DASHBOARD_TABS],
+        "flash_msg": "Dashboard tabs saved." if saved else "",
+        "flash_kind": "ok" if saved else "",
+    })
+
+
+@router.post("/admin/dashboard")
+async def admin_dashboard_save(request: Request):
+    me = _admin(request)
+    from epiproc.db.settings import set_enabled_tabs
+    form = await request.form()
+    selected = form.getlist("tabs")
+    set_enabled_tabs(selected)
+    _audit(request, me, "admin_dashboard_tabs", {"enabled": selected})
+    return RedirectResponse("/admin/dashboard?saved=1", status_code=303)
+
+
 @router.post("/admin/users/new")
 async def create_user(
     request: Request,

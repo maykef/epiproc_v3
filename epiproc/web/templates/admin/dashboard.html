@@ -1,0 +1,24 @@
+{% extends "admin/base.html" %}
+{% block title %}Dashboard settings{% endblock %}
+{% block content %}
+<h1>Dashboard settings</h1>
+
+<div class="card">
+  <h2>Visible tabs</h2>
+  <p style="color:var(--muted);font-size:13px;margin-top:-4px">
+    Choose which tabs appear on this customer's dashboard. Applies to everyone who
+    signs in to this instance. (This panel is admin-only — customers never see it.)
+  </p>
+  <form method="post" action="/admin/dashboard">
+    <div style="display:flex;flex-direction:column;gap:10px;margin:14px 0">
+      {% for t in tabs %}
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input type="checkbox" name="tabs" value="{{ t.key }}" {% if t.on %}checked{% endif %}>
+        <span>{{ t.label }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <button type="submit" class="btn">Save</button>
+  </form>
+</div>
+{% endblock %}
