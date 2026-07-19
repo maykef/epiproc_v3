@@ -391,7 +391,7 @@ tr:hover td{background:rgba(108,124,255,.06);}
 <div id="page-pricetracker" class="page">
   <div class="card">
     <h2>Price Tracker</h2>
-    <p style="color:var(--muted);font-size:12px;margin:-4px 0 12px">Unit prices per SKU across all invoices. Article number used as key where available, description otherwise. Click a row to expand purchase history.</p>
+    <p id="pt-intro" style="color:var(--muted);font-size:12px;margin:-4px 0 12px">Unit-price trends. Click a row to expand purchase history.</p>
     <div class="controls">
       <input type="text" id="pt-search" placeholder="Search article or description…" oninput="filterPT()">
       <select id="pt-sup-filter" onchange="filterPT()"><option value="">All Suppliers</option></select>
@@ -1455,9 +1455,14 @@ function _ptKey(it){
 // Descriptions that are financial adjustments, not real SKUs
 const PT_SKIP=/^\s*(discount|total discount|rebate|adjustment|credit|surcharge|handling|freight|carriage|vat|tax|shipping)\s*$/i;
 
+const PT_SKIP_CATS=['Deposit','Pallet','Packaging','Freight','Delivery','Transport'];
 function buildPriceTracker(){
+  var intro=document.getElementById('pt-intro');
+  if(intro){var m=window.PT_GROUP==='variety'?'by variety (product/cultivar) — filter by category to drill into a type':window.PT_GROUP==='category'?'by category':'by SKU (article number, or description)';
+    intro.textContent='Unit-price trends '+m+'. Only items seen on 2+ invoices show a trend; mixed-price groups show "—". Click a row to expand purchase history.';}
   const its=filtItems().filter(i=>{
     if(i.unit_price==null||i.unit_price<=0)return false;
+    if(PT_SKIP_CATS.indexOf(i.category)>=0)return false;  // operational, not a product price
     const desc=(i.description||'').trim();
     const art=(i.article||'').trim();
     if(PT_SKIP.test(desc)||(PT_SKIP.test(art)&&!desc))return false;
@@ -1488,10 +1493,11 @@ function buildPriceTracker(){
     const prices=occ.map(o=>o.unit_price);
     const fp=prices[0], lp=prices[prices.length-1];
     const drift=fp>0?(lp-fp)/fp*100:0;
+    const mn=Math.min(...prices),mx=Math.max(...prices);
     return{...g,occurrences:occ,appearances:occ.length,
       first_date:occ[0].date,latest_date:occ[occ.length-1].date,
       first_price:fp,latest_price:lp,
-      min_price:Math.min(...prices),max_price:Math.max(...prices),drift};
+      min_price:mn,max_price:mx,drift,mixed:mn>0&&mx/mn>5};
   });
   PT_DETAIL_KEY=null;
   filterPT();
@@ -1536,8 +1542,9 @@ function renderPTTable(page){
   slice.forEach(g=>{
     const gk=g.item_key+'|||'+g.supplier;
     const isOpen=PT_DETAIL_KEY===gk;
-    const driftCol=g.appearances<2?'var(--muted)':g.drift>10?'#ff6b6b':g.drift<-10?'#56cf8e':'var(--muted)';
-    const driftTxt=g.appearances<2?'—':(g.drift>0?'+':'')+g.drift.toFixed(1)+'%';
+    const _unrel=g.appearances<2||g.mixed;
+    const driftCol=_unrel?'var(--muted)':g.drift>10?'#ff6b6b':g.drift<-10?'#56cf8e':'var(--muted)';
+    const driftTxt=_unrel?'—':(g.drift>0?'+':'')+g.drift.toFixed(1)+'%';
     const esc=gk.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     const descShort=g.description.length>70?g.description.slice(0,70)+'…':g.description;
     const itemCell=g.article

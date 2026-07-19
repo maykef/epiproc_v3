@@ -44,11 +44,19 @@ def _requeue_stuck(conn) -> None:  # noqa: ANN001
 
 
 def _run_job(job: dict) -> None:
-    """Dispatch a claimed job to the right engine stage. STUB dispatch."""
+    """Dispatch a claimed job to the right engine stage."""
     jtype = job["job_type"]
-    # onboard -> onboarding flow; extract -> ingest.pipeline.process_folder;
-    # categorise -> ingest.categorise; report -> reports engine. (P2+)
-    raise NotImplementedError(f"_run_job({jtype}) — engine stages land in P2+")
+    if jtype == "categorise":
+        from epiproc.db.pool import init_pool
+        from epiproc.ingest.categorise import categorise_all
+        init_pool()
+        params = job.get("params") or {}
+        with _gpu_sem:
+            n = categorise_all(only_uncategorised=params.get("only_uncategorised", False))
+        print(f"[worker] categorise job {job['id']}: {n} items")
+        return
+    # onboard/extract/report land in later phases.
+    raise NotImplementedError(f"_run_job({jtype}) — not yet implemented")
 
 
 def poll() -> None:

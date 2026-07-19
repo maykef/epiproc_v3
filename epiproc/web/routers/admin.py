@@ -92,15 +92,21 @@ def admin_users(request: Request, ok: str = "", err: str = ""):
 
 
 @router.get("/admin/dashboard")
-def admin_dashboard(request: Request, saved: str = ""):
+def admin_dashboard(request: Request, ok: str = ""):
     me = _admin(request)
-    from epiproc.db.settings import DASHBOARD_TABS, get_enabled_tabs
+    from epiproc.db.settings import (
+        DASHBOARD_TABS, get_categorisation_scheme, get_currency_symbol,
+        get_enabled_tabs, get_price_tracker_key,
+    )
     enabled = get_enabled_tabs()
     return templates.TemplateResponse(request, "admin/dashboard.html", {
         "me": me["username"],
         "tabs": [{"key": k, "label": lbl, "on": k in enabled} for k, lbl in DASHBOARD_TABS],
-        "flash_msg": "Dashboard tabs saved." if saved else "",
-        "flash_kind": "ok" if saved else "",
+        "currency": get_currency_symbol(),
+        "pt_key": get_price_tracker_key(),
+        "scheme": get_categorisation_scheme(),
+        "flash_msg": ok,
+        "flash_kind": "ok" if ok else "",
     })
 
 
@@ -109,10 +115,40 @@ async def admin_dashboard_save(request: Request):
     me = _admin(request)
     from epiproc.db.settings import set_enabled_tabs
     form = await request.form()
-    selected = form.getlist("tabs")
-    set_enabled_tabs(selected)
-    _audit(request, me, "admin_dashboard_tabs", {"enabled": selected})
-    return RedirectResponse("/admin/dashboard?saved=1", status_code=303)
+    set_enabled_tabs(form.getlist("tabs"))
+    _audit(request, me, "admin_dashboard_tabs", {"enabled": form.getlist("tabs")})
+    return RedirectResponse(f"/admin/dashboard?ok={_enc('Tabs saved.')}", status_code=303)
+
+
+@router.post("/admin/dashboard/appearance")
+async def admin_dashboard_appearance(request: Request):
+    me = _admin(request)
+    from epiproc.db.settings import set_currency_symbol, set_price_tracker_key
+    form = await request.form()
+    set_currency_symbol((form.get("currency") or "").strip() or "£")
+    set_price_tracker_key(form.get("pt_key") or "article")
+    _audit(request, me, "admin_dashboard_appearance",
+           {"currency": form.get("currency"), "pt_key": form.get("pt_key")})
+    return RedirectResponse(f"/admin/dashboard?ok={_enc('Appearance saved.')}", status_code=303)
+
+
+@router.post("/admin/dashboard/categorisation")
+async def admin_dashboard_categorisation(request: Request):
+    me = _admin(request)
+    from epiproc.db.settings import set_categorisation_scheme
+    form = await request.form()
+    set_categorisation_scheme(form.get("scheme") or "")
+    _audit(request, me, "admin_categorisation_scheme", {})
+    return RedirectResponse(f"/admin/dashboard?ok={_enc('Categorisation scheme saved. Re-run categorisation to apply.')}", status_code=303)
+
+
+@router.post("/admin/dashboard/recategorise")
+def admin_dashboard_recategorise(request: Request):
+    me = _admin(request)
+    from epiproc.db.jobs import create_job
+    jid = create_job("categorise", {"only_uncategorised": False})
+    _audit(request, me, "admin_recategorise", {"job_id": jid})
+    return RedirectResponse(f"/admin/dashboard?ok={_enc('Re-categorisation queued (job ' + jid[:8] + '). Refresh the dashboard in a moment.')}", status_code=303)
 
 
 @router.post("/admin/users/new")

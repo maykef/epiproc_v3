@@ -2,15 +2,14 @@
 {% block title %}Dashboard settings{% endblock %}
 {% block content %}
 <h1>Dashboard settings</h1>
+<p style="color:var(--muted);font-size:13px;margin-top:-4px">
+  Per-customer settings for this instance. Admin-only — customers never see this page.
+</p>
 
 <div class="card">
   <h2>Visible tabs</h2>
-  <p style="color:var(--muted);font-size:13px;margin-top:-4px">
-    Choose which tabs appear on this customer's dashboard. Applies to everyone who
-    signs in to this instance. (This panel is admin-only — customers never see it.)
-  </p>
   <form method="post" action="/admin/dashboard">
-    <div style="display:flex;flex-direction:column;gap:10px;margin:14px 0">
+    <div style="display:flex;flex-direction:column;gap:9px;margin:12px 0">
       {% for t in tabs %}
       <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
         <input type="checkbox" name="tabs" value="{{ t.key }}" {% if t.on %}checked{% endif %}>
@@ -18,7 +17,50 @@
       </label>
       {% endfor %}
     </div>
-    <button type="submit" class="btn">Save</button>
+    <button type="submit" class="btn">Save tabs</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Appearance</h2>
+  <form method="post" action="/admin/dashboard/appearance">
+    <div style="display:flex;gap:24px;flex-wrap:wrap;margin:12px 0">
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:13px">
+        <span>Currency symbol</span>
+        <input type="text" name="currency" value="{{ currency }}" maxlength="4" style="width:80px">
+        <span style="color:var(--muted);font-size:11px">Leave as auto-detected, or force (€, £, $…)</span>
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:13px">
+        <span>Price Tracker groups by</span>
+        <select name="pt_key">
+          <option value="article"  {% if pt_key=='article'  %}selected{% endif %}>Article / SKU</option>
+          <option value="category" {% if pt_key=='category' %}selected{% endif %}>Category</option>
+          <option value="variety"  {% if pt_key=='variety'  %}selected{% endif %}>Variety</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit" class="btn">Save appearance</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Categorisation</h2>
+  <p style="color:var(--muted);font-size:12px;margin-top:-4px">
+    Instruction to the local model for classifying line items — customer-specific
+    (a flower buyer categorises by flower type). Save, then re-run to apply.
+  </p>
+  <form method="post" action="/admin/dashboard/categorisation">
+    <textarea name="scheme" rows="6" style="width:100%;box-sizing:border-box;font-size:12px;
+      line-height:1.5;padding:8px 10px;background:var(--surf2);border:1px solid var(--border);
+      color:var(--text);border-radius:6px;resize:vertical">{{ scheme }}</textarea>
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:center">
+      <button type="submit" class="btn">Save scheme</button>
+    </div>
+  </form>
+  <form method="post" action="/admin/dashboard/recategorise" style="margin-top:10px"
+        onsubmit="return confirm('Re-run categorisation on all invoices with the current scheme?')">
+    <button type="submit" class="btn" style="background:var(--surf2)">↻ Re-run categorisation now</button>
+    <span style="color:var(--muted);font-size:11px;margin-left:8px">Runs in the background on the local model.</span>
   </form>
 </div>
 {% endblock %}
