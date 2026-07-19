@@ -228,6 +228,12 @@ def _apply(template: str, subs: dict) -> str:
     template = template.replace("</nav>", _LOGOUT_BTN, 1)
     template = template.replace(_TEMPLATE_BRAND, settings.institution)
     template = template.replace("</body>", _tab_toggle_js() + "</body>", 1)
+    # Currency symbol is per-customer (the template hardcodes £). Applied after
+    # substitutions so injected values (e.g. the header grand total) convert too.
+    from epiproc.db.settings import get_currency_symbol
+    sym = get_currency_symbol()
+    if sym != "£":
+        template = template.replace("£", sym)
     return template
 
 

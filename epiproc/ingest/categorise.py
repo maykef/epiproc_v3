@@ -63,7 +63,11 @@ def categorise_all(only_uncategorised: bool = True, progress=None) -> int:
             items = conn.execute(q + " ORDER BY id", (inv_id,)).fetchall()
             if not items:
                 continue
-            descs = [(it["description"] or it["article"] or "") for it in items]
+            # Feed BOTH article and description: on some suppliers the product
+            # name is in `article` while `description` holds a customs code, and
+            # vice-versa. Give the model everything so it never sees only a code.
+            descs = [" — ".join(p for p in (it["article"], it["description"]) if p) or "(no description)"
+                     for it in items]
             try:
                 cats = _categorise_descriptions(client, settings.vllm_model, descs, scheme)
             except Exception as e:  # noqa: BLE001

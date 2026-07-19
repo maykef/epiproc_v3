@@ -71,3 +71,26 @@ def get_categorisation_scheme() -> str:
 
 def set_categorisation_scheme(text: str) -> None:
     set_setting("categorisation_scheme", (text or "").strip() or DEFAULT_CATEGORISATION)
+
+
+# ── Currency symbol (per customer) ───────────────────────────────────────────
+_CUR_SYMBOLS = {"EUR": "€", "GBP": "£", "USD": "$", "JPY": "¥", "CHF": "CHF ", "SEK": "kr "}
+
+
+def get_currency_symbol() -> str:
+    """Explicit setting wins; otherwise auto-detect from the data's currency."""
+    v = get_setting("currency_symbol")
+    if v:
+        return v
+    with pool().connection() as conn:
+        r = conn.execute(
+            "SELECT currency FROM invoices WHERE currency IS NOT NULL "
+            "GROUP BY currency ORDER BY count(*) DESC LIMIT 1"
+        ).fetchone()
+    if r and r["currency"]:
+        return _CUR_SYMBOLS.get(r["currency"].upper(), "£")
+    return "£"
+
+
+def set_currency_symbol(sym: str) -> None:
+    set_setting("currency_symbol", sym)
