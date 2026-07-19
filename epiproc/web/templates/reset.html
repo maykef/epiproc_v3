@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Set your password — EpiProc</title>
+  <meta name="csrf-token" content="{{ request.state.csrf_token }}">
+  <script>(function(){var t={{ request.state.csrf_token | tojson }};var _f=window.fetch;window.fetch=function(url,o){o=o||{};var m=(o.method||'GET').toUpperCase();if(m==='GET'||m==='HEAD'||m==='OPTIONS')return _f(url,o);o.headers=Object.assign({'X-CSRF-Token':t},o.headers||{});return _f(url,o);};function p(){document.querySelectorAll('form').forEach(function(f){if(f.dataset.csrfDone)return;f.dataset.csrfDone='1';f.addEventListener('submit',function(){if(!f.querySelector('[name="_csrf"]')){var i=document.createElement('input');i.type='hidden';i.name='_csrf';i.value=t;f.appendChild(i);}});});}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',p);else p();})();</script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center;
+      justify-content: center; background: #f1f5f9;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .card {
+      background: #fff; border-radius: 12px; padding: 2.5rem 2rem;
+      width: 100%; max-width: 400px; box-shadow: 0 4px 24px rgba(0,0,0,.08);
+    }
+    h1 { margin: 0 0 .25rem; font-size: 1.4rem; color: #1e293b; }
+    .sub { color: #64748b; font-size: .9rem; margin-bottom: 1.5rem; }
+    label { display: block; font-size: .85rem; color: #374151; margin-bottom: .25rem; font-weight: 500; }
+    input[type=password] {
+      width: 100%; padding: .65rem .75rem; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 1rem; margin-bottom: 1rem;
+      transition: border-color .15s;
+    }
+    input[type=password]:focus { outline: none; border-color: #1a56db; box-shadow: 0 0 0 3px rgba(26,86,219,.15); }
+    .hint { font-size: .78rem; color: #9ca3af; margin-top: -.75rem; margin-bottom: 1rem; }
+    button {
+      width: 100%; padding: .75rem; background: #1a56db; color: #fff;
+      border: none; border-radius: 6px; font-size: 1rem; font-weight: 600;
+      cursor: pointer; transition: background .15s;
+    }
+    button:hover { background: #1648c0; }
+    .error {
+      background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b;
+      border-radius: 6px; padding: .65rem .85rem; margin-bottom: 1rem;
+      font-size: .9rem;
+    }
+    .invalid {
+      background: #fff7ed; border: 1px solid #fdba74; color: #9a3412;
+      border-radius: 6px; padding: 1rem; font-size: .9rem; text-align: center;
+    }
+    .logo { font-weight: 700; color: #1a56db; font-size: 1.1rem; margin-bottom: 1.25rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">EpiProc</div>
+
+    {% if invalid %}
+      <div class="invalid" role="alert">
+        <strong>This link has expired or already been used.</strong><br>
+        Ask your administrator to send a new invite.
+      </div>
+    {% else %}
+      <h1>Set your password</h1>
+      <p class="sub">Welcome, <strong>{{ username }}</strong>. Choose a password to activate your account.</p>
+
+      {% if error %}
+        <div class="error" role="alert">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/reset/{{ token }}">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password"
+               minlength="12" required autocomplete="new-password">
+        <p class="hint">At least 12 characters.</p>
+
+        <label for="password2">Confirm password</label>
+        <input type="password" id="password2" name="password2"
+               minlength="12" required autocomplete="new-password">
+
+        <button type="submit">Set password and sign in</button>
+      </form>
+    {% endif %}
+  </div>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EpiProc — Two-factor authentication</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f1a;--surf:#161929;--surf2:#1e2238;--border:#282d4a;
+  --text:#e4e8f5;--muted:#8b93be;--accent:#6c7cff;--accent-h:#8090ff;
+  --err:#ff6b6b;--err-bg:#ff6b6b18;--err-border:#ff6b6b44;
+}
+body{
+  min-height:100vh;background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;color:var(--text);
+  background-image:radial-gradient(ellipse 80% 60% at 50% -10%,#6c7cff18 0%,transparent 60%);
+}
+.brand{text-align:center;margin-bottom:32px}
+.brand h1{font-size:22px;font-weight:700;letter-spacing:-.3px}
+.brand p{color:var(--muted);font-size:12px;margin-top:4px}
+.card{width:100%;max-width:380px;background:var(--surf);border:1px solid var(--border);
+      border-radius:12px;padding:32px 36px;box-shadow:0 8px 40px #0006,0 0 0 1px #6c7cff10}
+.error{background:var(--err-bg);border:1px solid var(--err-border);color:var(--err);
+       border-radius:7px;padding:10px 14px;font-size:12px;margin-bottom:20px;
+       display:flex;align-items:center;gap:8px}
+label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;
+      letter-spacing:.7px;color:var(--muted);margin-bottom:6px}
+input{width:100%;background:var(--surf2);border:1px solid var(--border);
+      color:var(--text);padding:10px 13px;border-radius:7px;font-size:20px;
+      outline:none;transition:border-color .15s;letter-spacing:4px;text-align:center}
+input:focus{border-color:var(--accent)}
+.field{margin-bottom:18px}
+button{width:100%;background:var(--accent);color:#fff;border:none;padding:11px;
+       border-radius:7px;font-size:14px;font-weight:600;cursor:pointer;
+       transition:background .15s;margin-top:4px}
+button:hover{background:var(--accent-h)}
+.hint{color:var(--muted);font-size:12px;text-align:center;margin-top:16px}
+footer{margin-top:40px;font-size:11px;color:var(--muted);text-align:center}
+</style>
+<meta name="csrf-token" content="{{ request.state.csrf_token }}">
+<script>(function(){var t={{ request.state.csrf_token | tojson }};var _f=window.fetch;window.fetch=function(url,o){o=o||{};var m=(o.method||'GET').toUpperCase();if(m==='GET'||m==='HEAD'||m==='OPTIONS')return _f(url,o);o.headers=Object.assign({'X-CSRF-Token':t},o.headers||{});return _f(url,o);};function p(){document.querySelectorAll('form').forEach(function(f){if(f.dataset.csrfDone)return;f.dataset.csrfDone='1';f.addEventListener('submit',function(){if(!f.querySelector('[name="_csrf"]')){var i=document.createElement('input');i.type='hidden';i.name='_csrf';i.value=t;f.appendChild(i);}});});}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',p);else p();})();</script>
+</head>
+<body>
+<div class="brand">
+  <h1>EpiProc</h1>
+  <p>Two-factor authentication</p>
+</div>
+<main>
+  <div class="card">
+    {% if error %}
+    <div class="error" role="alert">
+      <span aria-hidden="true">&#9888;</span>{{ error }}
+    </div>
+    {% endif %}
+    <form method="post" action="/login/mfa" novalidate>
+      <div class="field">
+        <label for="code">Authenticator code</label>
+        <input id="code" name="code" type="text" inputmode="numeric"
+               pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"
+               autofocus required placeholder="000000">
+      </div>
+      <button type="submit">Verify</button>
+    </form>
+    <p class="hint">Enter the 6-digit code from your authenticator app.</p>
+  </div>
+</main>
+<footer>EpiProc &copy; 2025</footer>
+</body>
+</html>

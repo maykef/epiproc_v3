@@ -1,0 +1,46 @@
+{% extends "admin/base.html" %}
+{% block title %}MFA — {{ target.username }}{% endblock %}
+{% block content %}
+{% if mfa_enabled %}
+<h1>MFA — {{ target.username }}</h1>
+<div class="card">
+  <p>MFA is <strong style="color:var(--ok)">enabled</strong> for this account.</p>
+  <p style="color:var(--muted);font-size:13px;margin:10px 0 20px">
+    Revoking MFA will require the user to re-enroll before they can enable it again.</p>
+  <form class="inline" method="post" action="/admin/users/{{ target.id }}/mfa/revoke">
+    <button class="btn btn-danger" type="submit"
+            onclick="return confirm('Remove MFA for {{ target.username }}?')">
+      Remove MFA
+    </button>
+  </form>
+  <a class="btn btn-ghost" href="/admin/users" style="margin-left:8px">Back</a>
+</div>
+{% else %}
+<h1>Enable MFA — {{ target.username }}</h1>
+<div class="card">
+  <p style="color:var(--muted);margin-bottom:16px">
+    Scan the QR code with Google Authenticator or Authy, then enter the
+    6-digit code below to confirm.</p>
+  <div style="text-align:center;margin-bottom:16px">
+    <img src="data:image/png;base64,{{ qr_data }}"
+         style="border-radius:8px;background:#fff;padding:8px" width="200" height="200"
+         alt="MFA QR code for {{ target.username }}">
+  </div>
+  <p style="font-size:12px;color:var(--muted);margin-bottom:20px;text-align:center">
+    Manual key: <code style="font-size:13px;letter-spacing:1px">{{ secret }}</code></p>
+  <form method="post" action="/admin/users/{{ target.id }}/mfa/enroll">
+    <input type="hidden" name="secret" value="{{ secret }}">
+    <div class="field" style="max-width:200px;margin:0 auto 16px">
+      <label for="mfa-code">6-digit code</label>
+      <input id="mfa-code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}"
+             maxlength="6" autocomplete="one-time-code" required autofocus
+             style="font-size:20px;letter-spacing:4px;text-align:center">
+    </div>
+    <div style="text-align:center">
+      <button class="btn btn-primary" type="submit">Enable MFA</button>
+      <a class="btn btn-ghost" href="/admin/users" style="margin-left:8px">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

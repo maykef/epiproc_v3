@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}Admin{% endblock %} — EpiProc</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f1a;--surf:#161929;--surf2:#1e2238;--border:#282d4a;
+  --text:#e4e8f5;--muted:#8b93be;--accent:#6c7cff;--accent-h:#8090ff;
+  --err:#ff6b6b;--ok:#4ade80;--warn:#facc15;
+}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;
+     font-size:14px;min-height:100vh;padding:0}
+nav{background:var(--surf);border-bottom:1px solid var(--border);
+    padding:0 24px;height:52px;display:flex;align-items:center;gap:16px}
+nav a{color:var(--muted);text-decoration:none;font-size:13px}
+nav a:hover{color:var(--text)}
+nav .brand{font-weight:700;color:var(--accent);font-size:15px;margin-right:8px}
+main{max-width:1100px;margin:32px auto;padding:0 24px}
+h1{font-size:20px;font-weight:700;margin-bottom:24px}
+h2{font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;
+   color:var(--muted);margin-bottom:12px}
+.card{background:var(--surf);border:1px solid var(--border);border-radius:10px;
+      padding:20px 24px;margin-bottom:24px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:8px 12px;color:var(--muted);font-weight:600;
+   font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+   border-bottom:1px solid var(--border)}
+td{padding:8px 12px;border-bottom:1px solid var(--border)20}
+tr:last-child td{border-bottom:none}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.badge-admin{background:#6c7cff22;color:var(--accent)}
+.badge-viewer{background:#8b93be18;color:var(--muted)}
+.badge-ok{background:#4ade8018;color:var(--ok)}
+.badge-warn{background:#facc1518;color:var(--warn)}
+.badge-err{background:#ff6b6b18;color:var(--err)}
+.btn{display:inline-block;padding:5px 12px;border-radius:6px;font-size:12px;
+     font-weight:600;border:none;cursor:pointer;text-decoration:none;line-height:1.5}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-h)}
+.btn-ghost{background:var(--surf2);color:var(--muted);border:1px solid var(--border)}
+.btn-ghost:hover{color:var(--text)}
+.btn-danger{background:#ff6b6b18;color:var(--err);border:1px solid #ff6b6b44}
+.btn-danger:hover{background:#ff6b6b30}
+.btn-sm{padding:3px 9px;font-size:11px}
+form.inline{display:inline}
+label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;
+      letter-spacing:.6px;color:var(--muted);margin-bottom:5px}
+input,select{background:var(--surf2);border:1px solid var(--border);color:var(--text);
+             padding:8px 11px;border-radius:6px;font-size:13px;outline:none;
+             transition:border-color .15s;width:100%}
+input:focus,select:focus{border-color:var(--accent)}
+.field{margin-bottom:14px}
+.row{display:grid;gap:14px}
+.row-2{grid-template-columns:1fr 1fr}
+.row-3{grid-template-columns:1fr 1fr 1fr}
+.flash{padding:10px 16px;border-radius:7px;margin-bottom:20px;font-size:13px}
+.flash-ok{background:#4ade8018;border:1px solid #4ade8044;color:var(--ok)}
+.flash-err{background:#ff6b6b18;border:1px solid #ff6b6b44;color:var(--err)}
+.secret-box{background:var(--surf2);border:1px solid #6c7cff44;border-radius:8px;
+            padding:16px 20px;font-family:monospace;font-size:16px;letter-spacing:2px;
+            color:var(--accent);text-align:center;margin:12px 0}
+details summary{cursor:pointer;color:var(--accent);font-size:13px;
+                font-weight:600;padding:4px 0;user-select:none}
+details[open] summary{margin-bottom:16px}
+</style>
+<meta name="csrf-token" content="{{ request.state.csrf_token }}">
+<script>(function(){var t={{ request.state.csrf_token | tojson }};var _f=window.fetch;window.fetch=function(url,o){o=o||{};var m=(o.method||'GET').toUpperCase();if(m==='GET'||m==='HEAD'||m==='OPTIONS')return _f(url,o);o.headers=Object.assign({'X-CSRF-Token':t},o.headers||{});return _f(url,o);};function p(){document.querySelectorAll('form').forEach(function(f){if(f.dataset.csrfDone)return;f.dataset.csrfDone='1';f.addEventListener('submit',function(){if(!f.querySelector('[name="_csrf"]')){var i=document.createElement('input');i.type='hidden';i.name='_csrf';i.value=t;f.appendChild(i);}});});}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',p);else p();})();</script>
+</head>
+<body>
+<nav role="navigation" aria-label="Admin navigation">
+  <span class="brand">EpiProc</span>
+  <a href="/dashboard">Dashboard</a>
+  <a href="/admin" {% if request.url.path == '/admin' %}style="color:var(--text);font-weight:600"{% endif %}>Overview</a>
+  <a href="/admin/users" {% if request.url.path.startswith('/admin/users') %}style="color:var(--text);font-weight:600"{% endif %}>Users</a>
+  <a href="/admin/audit" {% if request.url.path.startswith('/admin/audit') %}style="color:var(--text);font-weight:600"{% endif %}>Audit</a>
+  <a href="/admin/usage" {% if request.url.path.startswith('/admin/usage') %}style="color:var(--text);font-weight:600"{% endif %}>Usage</a>
+  <a href="/admin/services" {% if request.url.path.startswith('/admin/services') %}style="color:var(--text);font-weight:600"{% endif %}>Services</a>
+  <span style="flex:1"></span>
+  <span style="color:var(--muted)" aria-label="Signed in as {{ me }}">{{ me }}</span>
+  <a href="/logout">Sign out</a>
+</nav>
+<main id="main-content">
+{% if flash_msg %}
+<div class="flash flash-{{ flash_kind }}" role="alert">{{ flash_msg }}</div>
+{% endif %}
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

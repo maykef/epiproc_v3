@@ -1,0 +1,243 @@
+supplier: leica
+dedup_key: invoice_number
+
+dashboard:
+  display_name: "Leica Microsystems / Leica Geosystems"
+  color: "#E2001A"
+  payer_fallback_keywords:
+    - "University of Cambridge"
+    - "Shared Services"
+    - "Accounts Payable"
+    - "Finance Division"
+    - "FAO"
+  negative_document_types:
+    - "Credit Note"
+    - "CANCELLATION INVOICE"
+  # Canonical document_type values Leica legitimately emits. Read by the
+  # invoicing audit (D9) — values not in this set OR negative_document_types
+  # are flagged as non-canonical labels.
+  document_types:
+    - "Invoice"
+    - "Contract Invoice"
+    - "Service Invoice"
+    - "Credit Note"
+
+input_dir: invoices/leica
+output_dir: databases
+db_filename: invoices_leica.db
+
+pdf_dpi: 150
+max_tokens: 4096
+
+extraction_prompt: |
+  You are an expert invoice extraction AI. You are processing Page 1 of a multi-page invoice from Leica Microsystems or Leica Geosystems.
+  
+  INSTRUCTIONS:
+  1. Extract all fields according to the JSON schema below.
+  2. Return ONLY valid JSON. No markdown, no explanations.
+  3. Use JSON `null` for any field not present on this page.
+  4. Dates must be converted to YYYY-MM-DD format.
+  5. Monetary values must be plain numbers (no currency symbols, no commas).
+  6. `discount_amount` must always be a positive number.
+  7. `subtotal` is the sum of ALL line item total_prices found on THIS page only (do not calculate final totals yet).
+  8. `total` on this page is the partial total if available, otherwise null. The final `total` will be determined on the last page.
+  9. `line_items`: Extract all visible line items.
+     - Handle Leica Microsystems columns: Item, Material, Ord., Del., Price, Value.
+     - Handle Leica Geosystems columns: POS, ARTICLE, QTY, PC, DESCRIPTION, UNIT PRICE, GBP/TOTAL.
+     - **CRITICAL**: If a line item contains a sub-row in the "Del." column showing a percentage discount (e.g., "Percentage Discount (45.0 %)" or "Percentage Discount (5.0 %)"), extract the discount percentage into `discount_rate_percent` and the calculated discount amount into `discount_amount` for that specific line item context, but do not output a separate line item for the discount row itself. The `total_price` for the main item should reflect the net amount after this discount.
+     - Preserve all details in "description": "Contract no", "Equipment no", "Serial no", "Batch No", "Use By Date", "Material-No", "Customs tariff no", "Country of origin".
+  10. `seller`: Look for "Leica Microsystems (UK) Limited" or "Leica Geosystems Limited". Extract address, VAT, registration number, phone, website.
+  11. `buyer`: Look for "Bill To", "Customer address", "Payer", "University of Cambridge". Extract name, department, address, customer number.
+  12. `ship_to` / `sold_to`: Look for "Sold-to address", "Ship to". Note: On Page 1, these might be null if they appear on Page 2.
+  13. `references`: Extract ALL available reference fields found on the page:
+      - `your_reference`: "Your ref. no", "Your reference", "Your ref. No", "Your order ref.:"
+      - `order_reference`: "Our Order No.", "Order confirm. N°", "Order confirmation"
+      - `order_date`: "Order date", "Your doc. date"
+      - `order_confirmation`: "Order confirm. N°"
+      - `sales_person`: "Sales person", "Sales person:"
+      - `coordinator`: "Co-ordinator", "Co-ordinator:"
+      - `delivery_note`: "Delivery Note", "Delivery Note:"
+      - `tax_id`: "Tax-Id-No.", "Tax-Id-No.:"
+      - `job_number`: "Job no", "Job no:"
+      - `equipment_number`: "Equipment no", "Equipment no:", "Serial no" (if not in line items)
+      - `customer_number`: "Customer no", "Customer No:", "Your customer N°"
+      - `contract_number`: "Contract no", "Contract no:"
+      - `our_reference`: "Our reference:", "Our reference" (Distinct from Order No.)
+      - `customer_vat_number`: "VAT no:", "Customer VAT No:", "Customer VAT No.", "Customer VAT No" (Distinct from Tax-Id-No.)
+  14. `payment_terms`: Look for "Payment due", "Terms", "30 days net".
+  15. `bank_details`: Usually on Page 2 or later. Set to null on Page 1 unless visible.
+  16. `subscription_period`: Look for "Settlement period", "Billing period", "Invoicing period", "Jan 2025", "November 2022", "starting", "ending". Extract start and end dates.
+  17. `document_type`: Determine if "Invoice", "Credit Note", "Service Invoice", "Contract Invoice", "Proforma".
+  18. `currency`: Usually "GBP".
+  19. `notes`: Extract any e-invoice notices, confidentiality notices, or TUV/ISO certification text if relevant to the document context.
+
+  SCHEMA:
+  {
+    "document_type": null,
+    "invoice_number": null,
+    "invoice_date": null,
+    "currency": null,
+    "seller": {
+      "name": null,
+      "address": null,
+      "vat_number": null,
+      "registration_number": null,
+      "phone": null,
+      "website": null
+    },
+    "buyer": {
+      "name": null,
+      "department": null,
+      "address": null,
+      "customer_number": null
+    },
+    "ship_to": { "name": null, "department": null, "address": null },
+    "sold_to": { "name": null, "department": null, "address": null },
+    "references": {
+      "your_reference": null,
+      "order_reference": null,
+      "order_date": null,
+      "order_confirmation": null,
+      "sales_person": null,
+      "coordinator": null,
+      "delivery_note": null,
+      "tax_id": null,
+      "job_number": null,
+      "equipment_number": null,
+      "customer_number": null,
+      "contract_number": null,
+      "our_reference": null,
+      "customer_vat_number": null
+    },
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "discount_rate_percent": null,
+        "discount_amount": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "subscription_period": { "start": null, "end": null },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }
+
+continuation_prompt: |
+  You are an expert invoice extraction AI. You are processing Page N (N > 1) of a multi-page invoice from Leica.
+  
+  INSTRUCTIONS:
+  1. Extract ONLY the fields that are present on this page.
+  2. Return ONLY valid JSON. No markdown, no explanations.
+  3. Use JSON `null` for any field not present on this page.
+  4. Dates must be converted to YYYY-MM-DD format.
+  5. Monetary values must be plain numbers.
+  6. `discount_amount` must always be a positive number.
+  7. `line_items`: Append any NEW line items found on this page. Do not repeat items from previous pages.
+     - If a line item contains a sub-row in the "Del." column showing a percentage discount, handle as described in the extraction prompt (update net total_price).
+  8. `totals`: 
+     - `subtotal`: Calculate the sum of ALL line item total_prices across ALL pages (including previous pages). 
+       If you cannot see previous pages, set to null (the pipeline will merge).
+     - `total`: This is the GRAND TOTAL from the FINAL summary section on this page.
+     - `vat_amount`, `vat_rate_percent`, `freight`, `handling_charges`, `discount_amount`, `discount_rate_percent`: Extract from the final totals section on this page.
+     - `discount_2`: If a second discount is visible (e.g., "Discount X.XX%: -amount" distinct from the first), extract it here.
+     - **CRITICAL**: Handle "Brought forward" patterns. If you see "Brought forward" followed by "Total", "Discount", "VAT", "Grand total", treat "Brought forward" as the running subtotal from previous pages. Do not output "Brought forward" as a separate field; use the final calculated "Grand total" as the `total`. Ensure the arithmetic chain (Brought forward - Discount + Freight + VAT = Grand Total) is respected.
+     - Note: Leica invoices often have "Sub Total", "Freight & handling", "Total", "VAT", "Grand total" on the final page.
+     - If "Freight & handling" appears as a single combined line, assign the full amount to `freight` and leave `handling_charges` null.
+  9. `bank_details`: Extract if present (often on Page 2 or final page). Look for "HSBC", "Skandinaviska Enskilda Banken AB", "Sort Code", "Account Number", "IBAN", "SWIFT".
+  10. `payment_terms`: Extract if present on this page.
+  11. `seller`, `buyer`, `ship_to`, `sold_to`: Only extract if this page contains NEW or CORRECTED information (e.g., Sold-to on Page 2).
+  12. `references`: Extract any new references found, including `our_reference` and `customer_vat_number`.
+  13. `subscription_period`: Extract if found on this page.
+  14. `document_type`: Only set if this page clarifies the type (e.g., "Credit Note" stamp).
+  15. `currency`: Only set if found on this page.
+  16. `invoice_number`, `invoice_date`: Only set if found on this page (usually Page 1).
+  17. `notes`: Extract any final notes, e-invoice notices, or certification text found on this page.
+
+  ARITHMETIC CHECK (MANDATORY):
+  Before outputting, verify: subtotal - discount_amount - discount_2 + freight + handling_charges + vat_amount ≈ total.
+  If there is a discrepancy, adjust the extracted values to match the printed "Grand total" or "Total" line, prioritizing the printed total.
+
+  SCHEMA (Partial - only include fields found on this page):
+  {
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "discount_rate_percent": null,
+        "discount_amount": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "payment_terms": null,
+    "subscription_period": { "start": null, "end": null },
+    "seller": { "name": null, "address": null, "vat_number": null, "registration_number": null, "phone": null, "website": null },
+    "buyer": { "name": null, "department": null, "address": null, "customer_number": null },
+    "ship_to": { "name": null, "department": null, "address": null },
+    "sold_to": { "name": null, "department": null, "address": null },
+    "references": {
+      "your_reference": null,
+      "order_reference": null,
+      "order_date": null,
+      "order_confirmation": null,
+      "sales_person": null,
+      "coordinator": null,
+      "delivery_note": null,
+      "tax_id": null,
+      "job_number": null,
+      "equipment_number": null,
+      "customer_number": null,
+      "contract_number": null,
+      "our_reference": null,
+      "customer_vat_number": null
+    },
+    "document_type": null,
+    "invoice_number": null,
+    "invoice_date": null,
+    "currency": null,
+    "notes": null
+  }

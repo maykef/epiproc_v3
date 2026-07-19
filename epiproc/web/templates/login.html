@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EpiProc — Sign in</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f1a;--surf:#161929;--surf2:#1e2238;--border:#282d4a;
+  --text:#e4e8f5;--muted:#8b93be;--accent:#6c7cff;--accent-h:#8090ff;
+  --err:#ff6b6b;--err-bg:#ff6b6b18;--err-border:#ff6b6b44;
+}
+body{
+  min-height:100vh;background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;color:var(--text);
+  background-image:radial-gradient(ellipse 80% 60% at 50% -10%,#6c7cff18 0%,transparent 60%);
+}
+.brand{text-align:center;margin-bottom:32px}
+.brand svg{margin-bottom:12px;opacity:.9}
+.brand h1{font-size:22px;font-weight:700;letter-spacing:-.3px}
+.brand p{color:var(--muted);font-size:12px;margin-top:4px}
+.card{
+  width:100%;max-width:380px;
+  background:var(--surf);border:1px solid var(--border);border-radius:12px;
+  padding:32px 36px;
+  box-shadow:0 8px 40px #0006,0 0 0 1px #6c7cff10;
+}
+.error{
+  background:var(--err-bg);border:1px solid var(--err-border);color:var(--err);
+  border-radius:7px;padding:10px 14px;font-size:12px;margin-bottom:20px;
+  display:flex;align-items:center;gap:8px;
+}
+label{
+  display:block;font-size:11px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.7px;color:var(--muted);margin-bottom:6px;
+}
+input{
+  width:100%;background:var(--surf2);border:1px solid var(--border);
+  color:var(--text);padding:10px 13px;border-radius:7px;font-size:14px;
+  outline:none;transition:border-color .15s;
+}
+input:focus{border-color:var(--accent)}
+.field{margin-bottom:18px}
+button{
+  width:100%;background:var(--accent);color:#fff;border:none;
+  padding:11px;border-radius:7px;font-size:14px;font-weight:600;
+  cursor:pointer;transition:background .15s;margin-top:4px;
+}
+button:hover{background:var(--accent-h)}
+footer{margin-top:40px;font-size:11px;color:var(--muted);text-align:center}
+</style>
+<meta name="csrf-token" content="{{ request.state.csrf_token }}">
+<script>(function(){var t={{ request.state.csrf_token | tojson }};var _f=window.fetch;window.fetch=function(url,o){o=o||{};var m=(o.method||'GET').toUpperCase();if(m==='GET'||m==='HEAD'||m==='OPTIONS')return _f(url,o);o.headers=Object.assign({'X-CSRF-Token':t},o.headers||{});return _f(url,o);};function p(){document.querySelectorAll('form').forEach(function(f){if(f.dataset.csrfDone)return;f.dataset.csrfDone='1';f.addEventListener('submit',function(){if(!f.querySelector('[name="_csrf"]')){var i=document.createElement('input');i.type='hidden';i.name='_csrf';i.value=t;f.appendChild(i);}});});}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',p);else p();})();</script>
+</head>
+<body>
+
+<div class="brand">
+  <svg width="44" height="44" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <rect width="44" height="44" rx="10" fill="#6c7cff22"/>
+    <rect x="1" y="1" width="42" height="42" rx="9" stroke="#6c7cff" stroke-width="1.5" stroke-opacity=".5"/>
+    <text x="22" y="30" text-anchor="middle" font-family="'Segoe UI',system-ui,sans-serif" font-size="18" font-weight="700" fill="#6c7cff" letter-spacing="-1">EP</text>
+  </svg>
+  <h1>EpiProc</h1>
+  <p>Supplier analytics &amp; intelligence</p>
+</div>
+
+<main>
+  <div class="card">
+    {% if notice %}
+    <div style="background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;border-radius:7px;padding:10px 14px;font-size:12px;margin-bottom:20px;" role="status">
+      {{ notice }}
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="error" role="alert">
+      <span aria-hidden="true">&#9888;</span>{{ error }}
+    </div>
+    {% endif %}
+    <form method="post" action="/login" novalidate>
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text"
+               autocomplete="username" autofocus required
+               value="{{ prefill_user | default('') }}">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password"
+               autocomplete="current-password" required>
+      </div>
+      <button type="submit">Sign in</button>
+    </form>
+  </div>
+</main>
+
+<footer>EpiProc &copy; 2025</footer>
+</body>
+</html>

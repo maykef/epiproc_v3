@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+.secret_key
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+# data never lives in the engine repo — it lives in customer containers
+/data/
+pgdata/

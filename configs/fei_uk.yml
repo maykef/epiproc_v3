@@ -1,0 +1,262 @@
+supplier: fei_uk
+dedup_key: invoice_number
+
+dashboard:
+  display_name: "FEI UK (Pfeiffer Vacuum & ThermoFisher)"
+  color: "#0055A4"
+  c4_item_tolerance: 0.35
+  payer_fallback_keywords:
+    - "University of Cambridge"
+    - "Shared Services"
+    - "Electrical Engineering Division"
+    - "Department of Chemical Engineering"
+    - "Research Centre in Superconduct"
+  negative_document_types:
+    - "credit note"
+    - "credit memo"
+    - "cancellation invoice"
+  # Canonical document_type values this supplier legitimately emits. Read by
+  # the invoicing audit (D9). If absent, D9 is skipped for the supplier.
+  document_types:
+    - "Invoice"
+    - "credit note"
+    - "credit memo"
+    - "cancellation invoice"
+
+input_dir: invoices/fei_uk
+output_dir: databases
+db_filename: invoices_fei_uk.db
+
+pdf_dpi: 150
+max_tokens: 8192
+
+extraction_prompt: |
+  You are an invoice extraction AI. You are processing Page 1 of an invoice from FEI UK (Pfeiffer Vacuum / ThermoFisher / Luigs & Neumann / GAO FEI).
+
+  LAYOUT RULES & VARIANTS:
+  - **Pfeiffer Vacuum / FEI UK (Standard)**: Two-column layout. Left: "Bill To" / "Invoice To" / "Delivery Address". Right: "Sales Support", "Customer Details", "Invoice Metadata".
+    - **CRITICAL LINE ITEM COLUMN MAPPING**: The line-item table has specific columns. You MUST map them exactly as follows:
+      - Column "Qty" → `quantity`
+      - Column "£ Each" → `unit_price`
+      - Column "£ Total" → `total_price`
+      - **STRICT ARITHMETIC RULE**: Always read the value from the "£ Total" column for `total_price`. NEVER copy the "£ Each" value into `total_price`.
+      - **SELF-CORRECTION**: If `unit_price * quantity` does not equal the extracted `total_price` (within 0.01), you MUST recalculate `total_price` as `unit_price * quantity` and use that corrected value. This is critical for rows with short descriptions where the total column might be visually offset.
+  - **ThermoFisher**: Totals often use a "Tax Details" block.
+    - CRITICAL MAPPING: Map "Line Total" → `subtotal`, "Total Tax" → `vat_amount`, "Total" → `total`.
+  - **Luigs & Neumann**: Currency is EUR. Totals often show "Sum of Net / + 0 % VAT / Sum of Gross".
+    - CRITICAL MAPPING: Map "Sum of Net" → `subtotal`, "Sum of Gross" → `total`. Bank is often Sparkasse.
+  - **GAO FEI Consulting**: Minimal layout. Only "Description" and "Amount" columns. No position/article/quantity/unit. Bank is Monzo.
+  - **General**: Look for "University of Cambridge" in the buyer section.
+
+  INVOICE NUMBER FORMATS:
+  - Plain 8-digit number (e.g., '16075251') — Pfeiffer Vacuum invoices.
+  - Prefixes: "2025", "2026", "RE-" (followed by numeric digits, typically 9, e.g. RE-202514322).
+  - Formats: "YYYY/UKCIV...", "YYYY/BDCIV..." (ThermoFisher Bordeaux), "YYYY/ALPHANUMERIC10", "YYYY/3-letter code + 10/11 digits".
+  - Short codes: Alphanumeric short codes (e.g., "CLIC4").
+
+  DATES & CURRENCY:
+  - Dates: DD/MM/YYYY, DD/MM/YY, DD Month YYYY, DD.MM.YYYY. Convert ALL to YYYY-MM-DD.
+  - Currency: Usually GBP. If "Luigs & Neumann" or specific EUR indicators, use "EUR".
+
+  LINE ITEMS & DISCOUNTS (CRITICAL ARITHMETIC RULES):
+  - **Discount Row Handling (CRITICAL)**:
+    - **MANDATORY**: You MUST NOT skip rows labeled "Discount", "Credit", or "Adjustment" even if they have negative quantities (e.g., "qty=-1") or negative amounts.
+    - **Logic**:
+      1. If the document shows a `totals.discount_amount` explicitly in the summary section, extract that value there. Do NOT extract the discount row as a separate line item.
+      2. If `totals.discount_amount` is NOT present (null) on this page, but a row labeled "Discount" exists in the line-item table (even with negative qty/amount), you MUST extract it as a line item with a negative `total_price`.
+      3. Do NOT treat negative rows as layout artifacts. They are valid financial entries.
+  - **Per-Line Discounts (FEI SAS/BDCIV & Luigs & Neumann)**:
+    - If the document shows a "Price/PC" (list price) column and a "Total Price" (net) column, OR if text says "less X% discount" below the unit price:
+      - Set `unit_price` to the **effective net unit price** (calculated as `total_price / quantity`).
+      - **CRITICAL FOR BDCIV**: If a "Discount" column exists between Price/PC and Total Price, NEVER use the value from the Discount column as `unit_price`. Always derive `unit_price` as `total_price / quantity`.
+      - Do NOT create a separate negative discount line item for these per-line deductions.
+  - **Service Tier Labels (ThermoFisher/FEI)**: A standalone word on the row immediately above the article number identifies the service contract tier. Valid values are "SECURE", "Preferred", "Essential". If present, prepend it to the description field (e.g., description = "SECURE Talos F200X G2 Serial number: ..."). Do NOT discard it.
+  - **Descriptions**: May include Serial Numbers (S/N), Part Numbers, HTS codes, Country of Origin.
+  - **Header Discounts**: If a discount is explicitly listed in the `totals` section (e.g., "Discount 25%"), extract it there.
+  - Freight/Delivery: "Freight", "Packing, shipping & insurance".
+  - Subscription periods: "Payment Period", "Contract Period", "Start Date", "End Date".
+
+  BANK & PAYMENT:
+  - Banks: HSBC, Lloyds (Pfeiffer), Sparkasse (Luigs), Monzo (GAO).
+  - Payment terms often on Page 2, but check Page 1 footer.
+
+  ADDRESS & ENTITY MAPPING:
+  - `buyer`: Map "Bill To", "Invoice To", "Customer" to this field.
+  - `ship_to`: Map "Delivery Address", "Ship to", "End User Address" to this field.
+  - `sold_to`: ONLY populate this field if a distinct "Sold To" label is explicitly present on the document. If only "Bill To" or "Invoice To" exists, leave `sold_to` as null.
+
+  EXTRACTION INSTRUCTIONS:
+  - Extract all fields into the JSON schema below.
+  - Use `null` for any field not found on this page.
+  - For line items, extract position, article (part number), quantity, unit, description, unit_price, total_price.
+  - Ensure all monetary values are plain numbers (no symbols, no commas).
+  - Ensure all dates are YYYY-MM-DD.
+  - Note: `discount_2` is reserved for a second distinct discount type if explicitly found; otherwise leave as null.
+  - **Page 1 Specific**: Set `totals.subtotal` to `null` if this is a multi-page invoice and the full summary is not visible. Do not calculate a partial subtotal.
+  - **CRITICAL**: If the invoice contains multiple line items (e.g., multi-instrument contracts), extract ALL visible line items on this page. Do not stop at the first item. Ensure you capture every row in the table, even if the list is long.
+  - **UKCIV SUBTOTAL RECONCILIATION (CRITICAL)**: If the invoice number starts with "YYYY/UKCIV" (or similar service contract format) and the sum of extracted `total_price` values significantly exceeds the stated `subtotal` in the totals section, the invoice is billing only a subset of the listed instruments. You MUST prune the extracted line items: retain only the leading rows such that their sum of `total_price` matches the stated `subtotal`. Discard trailing rows that represent the full schedule but are not billed in this period.
+
+  ARITHMETIC CHECK (Internal):
+  - Verify that `unit_price * quantity` equals `total_price` for every line item.
+  - Note: For multi-page invoices, the final subtotal is the sum of ALL pages. Do not finalize the global subtotal yet if this is Page 1.
+
+  OUTPUT FORMAT:
+  Return ONLY valid JSON. No markdown, no explanation.
+
+  {
+    "document_type": null,
+    "invoice_number": null,
+    "invoice_date": null,
+    "currency": null,
+    "seller": {
+      "name": null,
+      "address": null,
+      "vat_number": null,
+      "registration_number": null,
+      "phone": null,
+      "website": null
+    },
+    "buyer": {
+      "name": null,
+      "department": null,
+      "address": null,
+      "customer_number": null
+    },
+    "ship_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "sold_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "references": {
+      "your_reference": null,
+      "order_reference": null,
+      "order_date": null,
+      "order_confirmation": null,
+      "sales_person": null,
+      "coordinator": null
+    },
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "subscription_period": {
+      "start": null,
+      "end": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }
+
+continuation_prompt: |
+  You are an invoice extraction AI. You are processing Page 2+ of an invoice from FEI UK.
+
+  LAYOUT RULES:
+  - This page contains additional line items and the final summary totals.
+  - Line items may be split across pages. Append these to the list from Page 1.
+  - The final totals section (Sub Total, VAT, Total) is usually on the last page.
+  - Bank details (HSBC, Lloyds, Sparkasse, Monzo), Payment Terms, and Delivery Terms are often found on Page 2.
+  - Look for "Freight", "Packing, shipping & insurance" in the totals or line items.
+  - Discounts may be applied as a final adjustment or as a line item.
+  - Serial numbers and contract periods may be listed under line item descriptions.
+  - SERVICE TIER LABEL: A standalone word ("SECURE", "Preferred", "Essential") on the row immediately above an article number is the service tier. Prepend it to the description (e.g., "Preferred Helios NanoLab Serial number: ..."). Do NOT discard it.
+
+  CRITICAL EXTRACTION RULES:
+  - **Multi-Instrument Contracts (CRITICAL)**: For FEI UK service contracts (UKCIV format) with multiple instruments, each instrument appears as a separate line in the subscription table. You MUST extract ALL rows. Do not stop at the first instrument. Ensure all pages are processed to capture the full list of items.
+  - **DEDUPLICATION GUARD**: When extracting line items on this page, compare them against the items already extracted on Page 1. If a row has the same `article` (or part number) AND the same `total_price` (or very close within 0.01) AND the same `description` prefix, it is a duplicate. DO NOT extract it again. Only append NEW rows that were not present on the previous page.
+  - **Discount Row Handling (CRITICAL)**:
+    - **MANDATORY**: You MUST NOT skip rows labeled "Discount", "Credit", or "Adjustment" even if they have negative quantities (e.g., "qty=-1") or negative amounts.
+    - **Logic**:
+      1. If the document shows a `totals.discount_amount` explicitly in the summary section, extract that value there. Do NOT extract the discount row as a separate line item.
+      2. If `totals.discount_amount` is NOT present (null) on this page, but a row labeled "Discount" exists in the line-item table (even with negative qty/amount), you MUST extract it as a line item with a negative `total_price`.
+      3. Do NOT treat negative rows as layout artifacts. They are valid financial entries.
+  - **Per-Line Discounts**: If a line item shows a list price and a net total (or "less X% discount"), set `unit_price` to the effective net price (`total_price / quantity`). Do not create a separate negative discount line item for these.
+  - **Header Discounts**: If a `discount_amount` is present in the totals section, DO NOT extract "Discount" rows as separate line items. The discount is already captured in the totals.
+  - **Page Continuity**: If the line item table is cut off at the bottom of the previous page, ensure you capture the remaining rows on this page. Do not assume the list is complete until the totals section is reached.
+  - **UKCIV SUBTOTAL RECONCILIATION (CRITICAL)**: If the invoice number starts with "YYYY/UKCIV" (or similar service contract format) and the sum of extracted `total_price` values (from all pages combined) significantly exceeds the stated `subtotal` in the totals section, the invoice is billing only a subset of the listed instruments. You MUST prune the extracted line items: retain only the leading rows such that their sum of `total_price` matches the stated `subtotal`. Discard trailing rows that represent the full schedule but are not billed in this period.
+
+  EXTRACTION INSTRUCTIONS:
+  - Extract additional line items and append them to the existing list (ensuring no duplicates).
+  - Extract the final totals (subtotal, discount, freight, VAT, total).
+  - Extract bank details, payment terms, and subscription periods if present.
+  - OVERWRITE any totals, bank details, or payment terms found on previous pages with the values from this final page.
+  - Ensure all monetary values are plain numbers.
+  - Ensure all dates are YYYY-MM-DD.
+
+  ARITHMETIC CHECK (MANDATORY):
+  - Calculate the global subtotal: Sum of ALL line item total_prices from ALL pages (including negative discount items if they are line items).
+  - Verify: subtotal - discount_amount + freight + vat_amount ≈ total (within 1 currency unit).
+  - If there is a discrepancy, prioritize the explicit "Total" field from the document for the `total` field, but adjust `discount_amount` or `freight` if the document clearly shows a calculation error, or leave as extracted if the document is ambiguous.
+  - `discount_amount` must always be a positive number representing the deduction.
+
+  OUTPUT FORMAT:
+  Return ONLY valid JSON. No markdown, no explanation.
+  Include ONLY the fields that are relevant to continuation (line_items, totals, payment_terms, bank_details, subscription_period, notes).
+  However, to ensure the pipeline merges correctly, return the full structure but with nulls for fields not present on this page, EXCEPT for line_items (which must be the new items) and totals (which must be the final values).
+
+  {
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "subscription_period": {
+      "start": null,
+      "end": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }

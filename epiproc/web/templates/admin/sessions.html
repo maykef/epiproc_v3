@@ -1,0 +1,50 @@
+{% extends "admin/base.html" %}
+{% block title %}Sessions — {{ target.username }}{% endblock %}
+{% block content %}
+<h1>Active sessions — <strong>{{ target.username }}</strong></h1>
+
+<p style="margin-bottom:20px">
+  <a href="/admin/users" class="btn btn-ghost btn-sm">← Back to users</a>
+</p>
+
+<div class="card">
+  {% if sessions %}
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <h2 style="margin:0">{{ sessions | length }} active session{{ 's' if sessions | length != 1 else '' }}</h2>
+    <form method="post" action="/admin/users/{{ target.id }}/sessions/revoke-all"
+          onsubmit="return confirm('Revoke all sessions for {{ target.username }}? They will be signed out immediately.')">
+      <button class="btn btn-danger btn-sm" type="submit">Revoke all</button>
+    </form>
+  </div>
+  <div style="overflow-x:auto">
+  <table role="table" aria-label="Active sessions">
+    <thead role="rowgroup">
+      <tr role="row">
+        <th role="columnheader" scope="col">Session ID</th>
+        <th role="columnheader" scope="col">IP address</th>
+        <th role="columnheader" scope="col">User agent</th>
+        <th role="columnheader" scope="col">Created</th>
+        <th role="columnheader" scope="col">Last seen</th>
+        <th role="columnheader" scope="col">Expires</th>
+      </tr>
+    </thead>
+    <tbody role="rowgroup">
+    {% for s in sessions %}
+    <tr role="row">
+      <td role="cell" style="font-family:monospace;font-size:11px">{{ s.id }}</td>
+      <td role="cell" style="font-family:monospace;font-size:12px">{{ s.ip or '—' }}</td>
+      <td role="cell" style="font-size:11px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+          title="{{ s.user_agent or '' }}">{{ (s.user_agent or '—')[:60] }}</td>
+      <td role="cell" style="font-size:12px;white-space:nowrap">{{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '—' }}</td>
+      <td role="cell" style="font-size:12px;white-space:nowrap">{{ s.last_seen.strftime('%Y-%m-%d %H:%M') if s.last_seen else '—' }}</td>
+      <td role="cell" style="font-size:12px;white-space:nowrap">{{ s.expires_at.strftime('%Y-%m-%d') if s.expires_at else '—' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted);text-align:center;padding:32px 0">No active sessions.</p>
+  {% endif %}
+</div>
+{% endblock %}

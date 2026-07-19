@@ -1,0 +1,182 @@
+{% extends "admin/base.html" %}
+{% block title %}User management{% endblock %}
+{% block content %}
+<h1>User management</h1>
+
+<div class="card">
+  <h2>Users ({{ users | length }})</h2>
+  <div style="overflow-x:auto">
+  <table role="table" aria-label="User list">
+    <thead role="rowgroup">
+      <tr role="row">
+        <th role="columnheader" scope="col">Username</th>
+        <th role="columnheader" scope="col">Display name</th>
+        <th role="columnheader" scope="col">Role</th>
+        <th role="columnheader" scope="col">Anthropic</th>
+        <th role="columnheader" scope="col">Expires</th>
+        <th role="columnheader" scope="col">Last login</th>
+        <th role="columnheader" scope="col">Status</th>
+        <th role="columnheader" scope="col">MFA</th>
+        <th role="columnheader" scope="col">Actions</th>
+      </tr>
+    </thead>
+    <tbody role="rowgroup">
+    {% for u in users %}
+    <tr role="row">
+      <td role="cell"><strong>{{ u.username }}</strong></td>
+      <td role="cell">{{ u.display_name or '—' }}</td>
+      <td role="cell"><span class="badge badge-{{ u.role }}">{{ u.role }}</span></td>
+      <td role="cell" style="text-align:center">{{ '✓' if u.anthropic_reports else '—' }}</td>
+      <td role="cell">{{ u.expires_at_str }}</td>
+      <td role="cell">{{ u.last_login_str }}</td>
+      <td role="cell">
+        {% if not u.active %}
+        <span class="badge badge-err">inactive</span>
+        {% elif u.is_expired %}
+        <span class="badge badge-warn">expired</span>
+        {% else %}
+        <span class="badge badge-ok">active</span>
+        {% endif %}
+      </td>
+      <td role="cell">
+        {% if u.mfa_secret %}
+        <span class="badge badge-ok" style="font-size:10px">MFA on</span>
+        {% else %}
+        <span class="badge badge-warn" style="font-size:10px">no MFA</span>
+        {% endif %}
+        <a class="btn btn-ghost btn-sm" href="/admin/users/{{ u.id }}/mfa"
+           aria-label="Manage MFA for {{ u.username }}">MFA</a>
+        <a class="btn btn-ghost btn-sm" href="/admin/users/{{ u.id }}/sessions"
+           aria-label="View sessions for {{ u.username }}">Sessions</a>
+      </td>
+      <td role="cell" style="min-width:300px">
+        <details>
+          <summary>Edit</summary>
+          <form method="post" action="/admin/users/{{ u.id }}/update">
+            <div class="row row-3">
+              <div class="field">
+                <label for="dn-{{ u.id }}">Display name</label>
+                <input id="dn-{{ u.id }}" name="display_name" value="{{ u.display_name or '' }}">
+              </div>
+              <div class="field">
+                <label for="em-{{ u.id }}">Email</label>
+                <input id="em-{{ u.id }}" name="email" value="{{ u.email or '' }}">
+              </div>
+              <div class="field">
+                <label for="ro-{{ u.id }}">Role</label>
+                <select id="ro-{{ u.id }}" name="role">
+                  <option {% if u.role == 'viewer' %}selected{% endif %}>viewer</option>
+                  <option {% if u.role == 'admin' %}selected{% endif %}>admin</option>
+                </select>
+              </div>
+            </div>
+            <div class="row row-3">
+              <div class="field">
+                <label for="ex-{{ u.id }}">Expires (YYYY-MM-DD, blank=never)</label>
+                <input id="ex-{{ u.id }}" name="expires_at" value="{{ u.expires_at or '' }}">
+              </div>
+              <div class="field">
+                <label for="su-{{ u.id }}">Suppliers (comma-sep, blank=all)</label>
+                <input id="su-{{ u.id }}" name="suppliers" value="{{ u.suppliers_str }}">
+              </div>
+              <div class="field" style="display:flex;align-items:flex-end;padding-bottom:1px">
+                <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;font-weight:400">
+                  <input type="checkbox" name="anthropic_reports" value="1"
+                         {% if u.anthropic_reports %}checked{% endif %}
+                         style="width:auto">
+                  Anthropic reports
+                </label>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
+          </form>
+        </details>
+
+        <details>
+          <summary>Set password</summary>
+          <form method="post" action="/admin/users/{{ u.id }}/password">
+            <div class="row row-2" style="margin-bottom:10px">
+              <div class="field">
+                <label for="pw-{{ u.id }}">New password (leave blank to auto-generate)</label>
+                <input id="pw-{{ u.id }}" name="password" type="password" autocomplete="new-password">
+              </div>
+            </div>
+            <button class="btn btn-ghost btn-sm" type="submit">Set password</button>
+          </form>
+        </details>
+
+        {% if u.email %}
+        <form class="inline" method="post" action="/admin/users/{{ u.id }}/invite">
+          <button class="btn btn-ghost btn-sm" type="submit"
+                  title="Send password-set email to {{ u.email }}">
+            Send invite
+          </button>
+        </form>
+        {% endif %}
+
+        {% if not u.is_self %}
+        <form class="inline" method="post" action="/admin/users/{{ u.id }}/toggle">
+          <button class="btn {{ 'btn-danger' if u.active else 'btn-ghost' }} btn-sm" type="submit"
+                  onclick="return confirm('{{ 'Deactivate' if u.active else 'Activate' }} {{ u.username }}?')">
+            {{ 'Deactivate' if u.active else 'Activate' }}
+          </button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Create user</h2>
+  <form method="post" action="/admin/users/new">
+    <div class="row row-3">
+      <div class="field">
+        <label for="new-username">Username *</label>
+        <input id="new-username" name="username" required autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="new-display-name">Display name</label>
+        <input id="new-display-name" name="display_name">
+      </div>
+      <div class="field">
+        <label for="new-email">Email</label>
+        <input id="new-email" name="email" type="email">
+      </div>
+    </div>
+    <div class="row row-3">
+      <div class="field">
+        <label for="new-password">Password (blank = auto-generate) *</label>
+        <input id="new-password" name="password" type="password" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label for="new-role">Role</label>
+        <select id="new-role" name="role">
+          <option selected>viewer</option>
+          <option>admin</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="new-expires">Expires (YYYY-MM-DD, blank=never)</label>
+        <input id="new-expires" name="expires_at">
+      </div>
+    </div>
+    <div class="row row-2" style="margin-bottom:14px">
+      <div class="field">
+        <label for="new-suppliers">Suppliers (comma-sep, blank=all)</label>
+        <input id="new-suppliers" name="suppliers">
+      </div>
+      <div class="field" style="display:flex;align-items:flex-end">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;font-weight:400">
+          <input type="checkbox" name="anthropic_reports" value="1" style="width:auto">
+          Anthropic reports
+        </label>
+      </div>
+    </div>
+    <button class="btn btn-primary" type="submit">Create user</button>
+  </form>
+</div>
+{% endblock %}

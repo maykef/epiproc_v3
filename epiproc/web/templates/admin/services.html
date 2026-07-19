@@ -1,0 +1,122 @@
+{% extends "admin/base.html" %}
+{% block title %}Services{% endblock %}
+{% block content %}
+<style>
+.svc-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+@media (max-width: 800px){.svc-grid{grid-template-columns:1fr}}
+.kv{display:grid;grid-template-columns:140px 1fr;gap:6px 14px;font-size:13px;margin-top:8px}
+.kv dt{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;align-self:center}
+.kv dd{color:var(--text);font-family:monospace;word-break:break-all}
+.bar{background:var(--surf2);border:1px solid var(--border);border-radius:5px;height:8px;overflow:hidden;margin-top:4px}
+.bar-fill{height:100%;background:var(--accent);transition:width .3s}
+.bar-fill.warn{background:var(--warn)}
+.bar-fill.err{background:var(--err)}
+.metric-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)20}
+.metric-row:last-child{border-bottom:none}
+.metric-row .num{font-family:monospace;color:var(--text)}
+.ctrls{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.note{color:var(--muted);font-size:12px;margin-top:10px;line-height:1.5}
+</style>
+
+<h1>Services</h1>
+
+<div class="svc-grid">
+  <!-- vLLM card -->
+  <div class="card">
+    <h2>vLLM (Qwen 122B)</h2>
+    {% if vllm.healthy %}
+      <span class="badge badge-ok">up</span>
+    {% else %}
+      <span class="badge badge-err">down</span>
+    {% endif %}
+    <span style="color:var(--muted);font-size:12px;margin-left:8px">{{ vllm.base_url }}</span>
+
+    <dl class="kv">
+      {% if vllm.model %}
+      <dt>Model</dt><dd>{{ vllm.model.id }}</dd>
+      <dt>Max length</dt><dd>{{ '{:,}'.format(vllm.model.max_model_len or 0) }} tokens</dd>
+      {% else %}
+      <dt>Model</dt><dd style="color:var(--muted)">— (server unreachable)</dd>
+      {% endif %}
+      <dt>Managed by</dt>
+      <dd>
+        {{ vllm.unit }}
+        {% if vllm.systemd.active %}
+          <span class="badge badge-ok" style="margin-left:8px">
+            {{ vllm.systemd.active_state or 'unknown' }} / {{ vllm.systemd.sub_state or '—' }}
+          </span>
+          {% if vllm.systemd.pid %}<span class="badge" style="margin-left:8px">pid {{ vllm.systemd.pid }}</span>{% endif %}
+        {% else %}
+          <span class="badge badge-warn" style="margin-left:8px">stopped</span>
+        {% endif %}
+      </dd>
+    </dl>
+
+    <div class="ctrls">
+      <form class="inline" method="post" action="/admin/services/vllm/start">
+        <button type="submit" class="btn btn-primary btn-sm"
+                onclick="return confirm('Start vLLM?')">Start</button>
+      </form>
+      <form class="inline" method="post" action="/admin/services/vllm/restart">
+        <button type="submit" class="btn btn-ghost btn-sm"
+                onclick="return confirm('Restart vLLM? Model reload takes ~3 min.')">Restart</button>
+      </form>
+      <form class="inline" method="post" action="/admin/services/vllm/stop">
+        <button type="submit" class="btn btn-danger btn-sm"
+                onclick="return confirm('Stop vLLM? In-flight report jobs will fail.')">Stop</button>
+      </form>
+    </div>
+
+  </div>
+
+  <!-- vLLM request metrics -->
+  <div class="card">
+    <h2>Request load</h2>
+    {% if vllm.metrics %}
+      <div class="metric-row"><span>Running</span><span class="num">{{ vllm.metrics.requests_running }}</span></div>
+      <div class="metric-row"><span>Waiting</span><span class="num">{{ vllm.metrics.requests_waiting }}</span></div>
+      <div class="metric-row"><span>KV cache</span><span class="num">{{ vllm.metrics.kv_cache_usage_pct }}%</span></div>
+      <div class="metric-row"><span>Prompt tokens</span><span class="num">{{ '{:,}'.format(vllm.metrics.prompt_tokens_total) }}</span></div>
+      <div class="metric-row"><span>Generated tokens</span><span class="num">{{ '{:,}'.format(vllm.metrics.generation_tokens_total) }}</span></div>
+    {% else %}
+      <p style="color:var(--muted)">No metrics — vLLM is unreachable.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- GPU card (full width) -->
+<div class="card">
+  <h2>GPU</h2>
+  {% if vllm.gpus %}
+    {% for gpu in vllm.gpus %}
+    <div style="margin-bottom:{% if not loop.last %}18px{% else %}0{% endif %}">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <strong>GPU {{ gpu.index }} — {{ gpu.name }}</strong>
+        <span style="color:var(--muted);font-size:12px">
+          {{ gpu.utilization_pct }}% util
+          {% if gpu.temperature_c is not none %} · {{ gpu.temperature_c }}°C{% endif %}
+        </span>
+      </div>
+      <div style="margin-top:8px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:2px">
+          <span>Memory</span>
+          <span class="num">{{ '{:,}'.format(gpu.mem_used_mib) }} / {{ '{:,}'.format(gpu.mem_total_mib) }} MiB ({{ gpu.mem_pct }}%)</span>
+        </div>
+        <div class="bar">
+          <div class="bar-fill {% if gpu.mem_pct >= 95 %}err{% elif gpu.mem_pct >= 85 %}warn{% endif %}"
+               style="width: {{ gpu.mem_pct }}%"></div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p style="color:var(--muted)">nvidia-smi not available on this host.</p>
+  {% endif %}
+</div>
+
+<p class="note">
+  This page auto-refreshes every 10 seconds.
+  <a href="/admin/services" class="btn btn-ghost btn-sm" style="margin-left:8px">Refresh now</a>
+</p>
+<meta http-equiv="refresh" content="10">
+{% endblock %}

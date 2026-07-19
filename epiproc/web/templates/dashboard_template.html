@@ -1,0 +1,3192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+{{CSRF_INJECT}}
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<title>Hogwarts School of Witchcraft and Wizardry – Supplier Spend Analysis</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+<style>
+:root{
+  --bg:#0d0f1a; --surf:#161929; --surf2:#1e2238; --border:#282d4a;
+  --text:#e4e8f5; --muted:#8b93be; --accent:#6c7cff;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;}
+
+header{background:var(--surf);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:12px;}
+header h1{font-size:18px;font-weight:700;}
+header .sub{color:var(--muted);font-size:11px;margin-left:auto;}
+
+nav{display:flex;gap:4px;padding:10px 24px;background:var(--surf);border-bottom:1px solid var(--border);overflow-x:auto;align-items:center;}
+.tab{padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);border:1px solid transparent;white-space:nowrap;}
+.tab.active{background:var(--accent);color:#fff;}
+.tab:hover:not(.active){border-color:var(--border);color:var(--text);}
+.nav-sep{flex:1;}
+#global-sup-wrap{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);}
+#global-sup-wrap select{background:var(--surf2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:11px;outline:none;}
+
+.page{display:none;padding:18px 24px;max-width:1800px;margin:0 auto;}
+.page.active{display:block;}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:16px;}
+.kpi{background:var(--surf);border:1px solid var(--border);border-radius:8px;padding:14px 16px;border-top:3px solid var(--kcolor,var(--accent));}
+.kpi .label{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:6px;}
+.kpi .value{font-size:22px;font-weight:700;line-height:1;}
+.kpi .sub{font-size:10px;color:var(--muted);margin-top:4px;}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;}
+.span2{grid-column:1/-1;}
+.card{background:var(--surf);border:1px solid var(--border);border-radius:8px;padding:16px 18px;}
+.card h2{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:14px;}
+
+.cbadge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;}
+
+.tbl-wrap{overflow-x:auto;max-height:520px;overflow-y:auto;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{background:var(--surf2);color:var(--muted);text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;position:sticky;top:0;z-index:1;white-space:nowrap;cursor:pointer;}
+th:hover{color:var(--text);}
+td{padding:8px 10px;border-bottom:1px solid var(--border);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:rgba(108,124,255,.06);}
+.num{text-align:right;font-variant-numeric:tabular-nums;}
+
+.controls{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+.controls input,.controls select{background:var(--surf2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px;outline:none;}
+.controls input{flex:1;min-width:160px;}
+.controls input:focus,.controls select:focus{border-color:var(--accent);}
+.col-filter{width:100%;background:var(--surf);border:1px solid var(--border);color:var(--text);padding:3px 5px;border-radius:4px;font-size:10px;outline:none;box-sizing:border-box;}
+.col-filter:focus{border-color:var(--accent);}
+#tl-filter-row th{padding:4px 6px;}
+
+.pager{display:flex;gap:4px;align-items:center;margin-top:10px;justify-content:flex-end;}
+.pager button{background:var(--surf2);border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;}
+.pager button.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.pager span{color:var(--muted);font-size:11px;}
+
+.heatmap td{text-align:right;padding:6px 10px;border:1px solid var(--border);}
+.heatmap th{text-align:center;font-size:10px;}
+.heatmap td.zero{color:var(--border);}
+
+.pt-row{cursor:pointer;transition:background 0.1s;}
+.pt-row:hover{background:var(--surf);}
+.pt-row.pt-open td{border-bottom:none;}
+.pt-detail-row td{border-top:none;}
+
+.ok{color:#56cf8e;} .warn{color:#ff9f43;} .err{color:#ff6b6b;}
+
+.sup-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:16px;}
+.sup-card{background:var(--surf);border:1px solid var(--border);border-radius:8px;padding:18px 20px;border-left:4px solid var(--sc,var(--accent));}
+.sup-card .sname{font-size:14px;font-weight:700;margin-bottom:10px;}
+.sup-card .srow{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border);color:var(--muted);}
+.sup-card .srow:last-child{border-bottom:none;}
+.sup-card .srow .sv{color:var(--text);font-weight:600;}
+
+@media(max-width:900px){
+  .grid2,.grid3{grid-template-columns:1fr;}
+  .span2{grid-column:1;}
+}
+
+/* ── Semantic Search ──────────────────────────────────────────────────── */
+#search-btn{display:flex;align-items:center;gap:6px;background:var(--surf2);border:1px solid var(--border);color:var(--muted);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;white-space:nowrap;transition:border-color .15s,color .15s;}
+#search-btn:hover{border-color:var(--accent);color:var(--text);}
+
+#search-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:1000;backdrop-filter:blur(4px);}
+#search-overlay.open{display:flex;align-items:flex-start;justify-content:center;padding-top:60px;}
+
+#thumb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:1100;backdrop-filter:blur(4px);align-items:center;justify-content:center;}
+#thumb-overlay.open{display:flex;}
+#thumb-panel{background:var(--surf);border:1px solid var(--border);border-radius:12px;max-width:min(860px,94vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.7);}
+#thumb-header{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0;}
+#thumb-header h3{margin:0;font-size:14px;font-weight:700;flex:1;}
+#thumb-meta{font-size:11px;color:var(--muted);}
+#thumb-close{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:2px 6px;border-radius:4px;}
+#thumb-close:hover{color:var(--text);background:var(--surf2);}
+#thumb-body{overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;align-items:center;}
+#thumb-noimg{color:var(--muted);font-size:13px;padding:40px;text-align:center;}
+#thumb-details{width:100%;font-size:12px;color:var(--muted);border-top:1px solid var(--border);padding-top:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px 16px;}
+#thumb-details span b{color:var(--text);font-weight:600;}
+
+#search-panel{background:var(--surf);border:1px solid var(--border);border-radius:12px;width:100%;max-width:780px;padding:24px;box-shadow:0 24px 80px rgba(0,0,0,.6);max-height:80vh;display:flex;flex-direction:column;gap:0;}
+#search-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+#search-input{flex:1;background:var(--surf2);border:1px solid var(--border);color:var(--text);padding:10px 14px;border-radius:8px;font-size:14px;outline:none;}
+#search-input:focus{border-color:var(--accent);}
+#search-close{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:4px 8px;line-height:1;border-radius:4px;}
+#search-close:hover{color:var(--text);background:var(--surf2);}
+
+#search-filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+#search-filters select,#search-filters input[type=number]{background:var(--surf2);border:1px solid var(--border);color:var(--text);padding:5px 9px;border-radius:6px;font-size:11px;outline:none;}
+#search-filters select:focus,#search-filters input:focus{border-color:var(--accent);}
+
+#search-status{font-size:11px;color:var(--muted);margin-bottom:8px;min-height:15px;}
+#search-results{overflow-y:auto;flex:1;}
+
+.sr-hit{background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:7px;transition:border-color .15s;cursor:pointer;}
+.sr-hit:hover{border-color:var(--accent);}
+.sr-top{display:flex;align-items:flex-start;gap:8px;margin-bottom:5px;}
+.sr-desc{font-size:13px;font-weight:600;color:var(--text);flex:1;line-height:1.3;}
+.sr-amount{font-size:13px;font-weight:700;color:#56cf8e;white-space:nowrap;}
+.sr-meta{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--muted);align-items:center;}
+.sr-score{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap;}
+.sr-badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;}
+.sr-empty{text-align:center;color:var(--muted);padding:40px 0;font-size:13px;}
+#search-hint{font-size:10px;color:var(--muted);opacity:.5;text-align:right;margin-top:8px;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.rpt-card{background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:10px;transition:border-color .15s;}
+.rpt-card:hover{border-color:var(--accent);}
+.rpt-card-title{font-size:13px;font-weight:700;color:var(--text);line-height:1.4;}
+.rpt-card-meta{font-size:11px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;}
+.rpt-card-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:var(--surf2);border:1px solid var(--border);color:var(--muted);text-transform:uppercase;}
+.rpt-card-actions{display:flex;gap:8px;margin-top:auto;}
+.rpt-btn-open{flex:1;font-size:12px;padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;text-align:center;text-decoration:none;}
+.rpt-btn-open:hover{opacity:.85;}
+.rpt-btn-del{font-size:13px;padding:6px 10px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;cursor:pointer;line-height:1;flex-shrink:0;}
+.rpt-btn-del:hover{background:#ff6b6b22;color:#ff6b6b;border-color:#ff6b6b;}
+.rpt-btn-pdf{font-size:12px;padding:6px 10px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;cursor:pointer;line-height:1;flex-shrink:0;text-decoration:none;display:flex;align-items:center;}
+.rpt-btn-pdf:hover{background:#1a233222;color:var(--text);border-color:var(--text);}
+.rpt-card-unified{border-color:#f4a26188;background:linear-gradient(135deg,var(--surf) 0%,#fff8f022 100%);}
+.rpt-card-unified .rpt-card-title{color:#f4a261;}
+.rpt-card-svc{border-color:#4ecdc488;background:linear-gradient(135deg,var(--surf) 0%,#f0fdfc22 100%);}
+.rpt-card-svc .rpt-card-title{color:#4ecdc4;}
+/* ── Reports v2 configure panel ─────────────────────────────────────────── */
+.rpt-sect-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:7px;}
+.rpt-opt{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;cursor:pointer;border:1px solid transparent;transition:background .1s,border-color .1s;}
+.rpt-opt:hover{background:var(--surf2);border-color:var(--border);}
+.rpt-opt-active{background:#6c7cff18;border-color:var(--accent)!important;color:var(--accent);}
+.rpt-opt-active span{font-weight:700;color:var(--accent);}
+.rpt-opt-pill{padding:4px 12px;border-radius:20px;font-size:11px;border:1px solid var(--border);background:var(--surf2);}
+.rpt-opt-pill.rpt-opt-active{background:#6c7cff18;border-color:var(--accent);}
+.rpt-arc-item{padding:8px 12px;border-radius:7px;border:1px solid var(--border);background:var(--surf);transition:border-color .12s;margin-bottom:5px;display:flex;align-items:center;gap:8px;}
+.rpt-arc-item:hover{border-color:var(--accent);}
+.rpt-arc-info{flex:1;min-width:0;cursor:pointer;}
+.rpt-arc-btn{flex-shrink:0;font-size:11px;padding:4px 9px;border-radius:5px;cursor:pointer;text-decoration:none;white-space:nowrap;line-height:1.4;}
+.rpt-arc-open{background:var(--accent);color:#fff;border:none;}
+.rpt-arc-open:hover{opacity:.85;}
+.rpt-arc-del{background:transparent;color:var(--muted);border:1px solid var(--border);}
+.rpt-arc-del:hover{background:#ff6b6b22;color:#ff6b6b;border-color:#ff6b6b;}
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+    <rect width="26" height="26" rx="6" fill="#6c7cff22"/>
+    <path d="M5 19l4-8 4 5 3-4 5 7" stroke="#6c7cff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <h1>Hogwarts School of Witchcraft and Wizardry — {{SUP_TITLE}}</h1>
+  <div class="sub">{{HEADER_SUB}}</div>
+  <div class="sub" style="font-size:10px;opacity:0.5">Data loaded: {{LOAD_TIME}}</div>
+</header>
+
+<nav>
+  <div class="tab active" onclick="showPage('overview',this)">Overview</div>
+  {{SUP_TAB}}
+  <div class="tab" onclick="showPage('categories',this)">By Category</div>
+  <div class="tab" onclick="showPage('departments',this)">By Department</div>
+  <div class="tab" onclick="showPage('invoices',this)">Invoices</div>
+  <div class="tab" onclick="showPage('pricetracker',this)">📈 Price Tracker</div>
+  <div class="tab" onclick="showPage('svccontracts',this)" style="color:#4ecdc4">⚙ Service Intel</div>
+  <div class="tab" onclick="showPage('reagents',this)" style="color:#a78bfa">🧪 Reagents Intel</div>
+  <div class="tab" onclick="showPage('reports',this);initReports()" style="color:#f4a261">📊 Reports</div>
+  <div class="nav-sep"></div>
+  <button id="search-btn" onclick="openSearch()" title="Semantic search (Ctrl+K)">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    Search
+  </button>
+  {{SUP_FILTER}}
+  {{ADMIN_LINK}}
+</nav>
+
+<!-- SEMANTIC SEARCH OVERLAY ──────────────────────────────────────────── -->
+<div id="search-overlay" onclick="if(event.target===this)closeSearch()">
+  <div id="search-panel">
+    <div id="search-head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input id="search-input" type="text" placeholder="e.g.  confocal maintenance   ·   filter set repair   ·   service contract SP8   ·   lamp replacement">
+      <button id="search-csv-btn" onclick="downloadSearchCSV()" style="display:none;background:var(--surf2);border:1px solid var(--border);color:var(--muted);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;white-space:nowrap">↓ CSV</button>
+      <button id="search-close" onclick="closeSearch()">✕</button>
+    </div>
+    <div id="search-filters">
+      <select id="sf-supplier">
+        <option value="">All suppliers</option>
+        <option value="leica">Leica</option>
+        <option value="zeiss">Zeiss</option>
+        <option value="life_technologies">Life Technologies</option>
+        <option value="nikon">Nikon</option>
+      </select>
+      <input id="sf-min" type="number" placeholder="Min £" style="width:80px">
+      <input id="sf-max" type="number" placeholder="Max £" style="width:80px">
+      <select id="sf-top">
+        <option value="10">Top 10</option>
+        <option value="20" selected>Top 20</option>
+        <option value="50">Top 50</option>
+      </select>
+    </div>
+    <div id="search-status"></div>
+    <div id="search-results"><div class="sr-empty" style="opacity:.5">Start typing to search across all invoice line items</div></div>
+    <div id="search-hint">Full-text search across all line items · Ctrl+K to open</div>
+  </div>
+</div>
+
+<!-- OVERVIEW ──────────────────────────────────────────────────────────────── -->
+<div id="page-overview" class="page active">
+  <div class="kpis">
+    <div class="kpi" style="--kcolor:#6c7cff"><div class="label">Total Invoices</div><div class="value">{{N_INV}}</div><div class="sub">{{KPI_SUP_SUB}}</div></div>
+    <div class="kpi" style="--kcolor:#56cf8e"><div class="label">Grand Total (£)</div><div class="value" id="kpi-grand"></div><div class="sub">all currencies combined</div></div>
+    <div class="kpi" style="--kcolor:#ff9f43"><div class="label">Line Items</div><div class="value">{{N_ITEMS}}</div><div class="sub">across all invoices</div></div>
+    <div class="kpi" style="--kcolor:#4ecdc4"><div class="label">Top Category</div><div class="value" style="font-size:15px" id="kpi-top-cat">—</div><div class="sub" id="kpi-top-cat-sub"></div></div>
+    <div class="kpi" style="--kcolor:#c77dff"><div class="label">Top Department</div><div class="value" style="font-size:13px" id="kpi-top-dept">—</div><div class="sub" id="kpi-top-dept-sub"></div></div>
+  </div>
+  <div class="grid2">
+    <div class="card span2">
+      <h2>Monthly Spend by Category (£ — item level)</h2>
+      <canvas id="c-monthly" height="90"></canvas>
+    </div>
+    <div class="{{CATPIE_CLASS}}">
+      <h2>Spend Flow: Supplier → Category</h2>
+      <div id="c-sankey" style="width:100%;overflow:hidden;"></div>
+    </div>
+    {{SUPPIE_CARD}}
+  </div>
+</div>
+
+<!-- BY SUPPLIER ───────────────────────────────────────────────────────────── -->
+<div id="page-suppliers" class="page">
+  <div class="sup-cards" id="sup-cards"></div>
+  <div class="grid2">
+    <div class="card">
+      <h2>Monthly Spend by Supplier (£ — invoice level)</h2>
+      <canvas id="c-monthly-sup" height="260"></canvas>
+    </div>
+    <div class="card">
+      <h2>Category Mix by Supplier (£ — item level)</h2>
+      <canvas id="c-catbysup" height="260"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- CATEGORIES ────────────────────────────────────────────────────────────── -->
+<div id="page-categories" class="page">
+  <div class="grid2">
+    <div class="card">
+      <h2>Category Totals</h2>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Category</th><th class="num">Items</th><th class="num">Total (£)</th><th class="num">%</th></tr></thead>
+        <tbody id="cat-table"></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h2>Spend Distribution</h2>
+      <canvas id="c-catbar" height="320"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Top Items per Category</h2>
+    <div class="controls">
+      <select id="cat-filter-sel" onchange="renderTopItems()"><option value="">All Categories</option></select>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Supplier</th><th>Category</th><th>Department</th><th>Description</th><th>Article</th><th class="num">Qty</th><th class="num">Unit £</th><th class="num">Total £</th><th>Date</th></tr></thead>
+      <tbody id="top-items-body"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- DEPARTMENTS ───────────────────────────────────────────────────────────── -->
+<div id="page-departments" class="page">
+  <div class="card">
+    <h2>Department Totals (invoice level)</h2>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Department</th><th class="num">Invoices</th><th class="num">Total (£)</th></tr></thead>
+      <tbody id="dept-table"></tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <h2>Category × Department Spend Matrix (£)</h2>
+    <div class="tbl-wrap" style="max-height:none;">
+      <table class="heatmap" id="matrix-table"></table>
+    </div>
+  </div>
+</div>
+
+<!-- INVOICES & LINE ITEMS ──────────────────────────────────────────────────── -->
+<div id="page-invoices" class="page">
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
+      <h2 id="inv-view-title" style="margin:0">All Invoices</h2>
+      <select id="inv-view-sel" onchange="switchInvView()" style="font-size:12px;padding:4px 8px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:6px">
+        <option value="invoices">Invoices</option>
+        <option value="lineitems">Line Items</option>
+      </select>
+    </div>
+
+    <!-- Invoice controls + table -->
+    <div id="inv-ctrl" class="controls">
+      <input type="text" id="inv-search" placeholder="Search invoice #, file, reference…" oninput="filterInvoices()">
+      <select id="inv-sup" onchange="filterInvoices()"><option value="">All Suppliers</option></select>
+      <select id="inv-dept" onchange="filterInvoices()"><option value="">All Departments</option></select>
+      <select id="inv-type" onchange="filterInvoices()">
+        <option value="">All Types</option>
+        <option>invoice</option><option>consolidated invoice</option>
+        <option>service invoice</option><option>contract invoice</option>
+        <option>credit note</option>
+      </select>
+    </div>
+    <div id="inv-section">
+      <div class="tbl-wrap" style="max-height:none;"><table>
+        <thead><tr>
+          <th onclick="sortInv('invoice_date')">Date ↕</th>
+          <th onclick="sortInv('supplier_name')">Supplier ↕</th>
+          <th onclick="sortInv('invoice_number')">Invoice # ↕</th>
+          <th onclick="sortInv('document_type')">Type ↕</th>
+          <th onclick="sortInv('department')">Department ↕</th>
+          <th onclick="sortInv('buyer_department')">Sub-dept ↕</th>
+          <th onclick="sortInv('subtotal')" style="text-align:right">Subtotal ↕</th>
+          <th onclick="sortInv('discount_amount')" style="text-align:right">Disc £ ↕</th>
+          <th style="text-align:right">Disc %</th>
+          <th onclick="sortInv('total_amount')" style="text-align:right">Net Total ↕</th>
+          <th>Currency</th><th>Status</th><th>File</th>
+        </tr></thead>
+        <tbody id="inv-body"></tbody>
+      </table></div>
+      <div class="pager" id="inv-pager"></div>
+    </div>
+
+    <!-- Line Items controls + table -->
+    <div id="li-ctrl" class="controls" style="display:none">
+      <input type="text" id="li-search" placeholder="Search description, article…" oninput="filterItems()">
+      <select id="li-sup" onchange="filterItems()"><option value="">All Suppliers</option></select>
+      <select id="li-cat" onchange="filterItems()"><option value="">All Categories</option></select>
+      <select id="li-dept" onchange="filterItems()"><option value="">All Departments</option></select>
+    </div>
+    <div id="li-section" style="display:none">
+      <div class="tbl-wrap" style="max-height:none;"><table>
+        <thead><tr>
+          <th onclick="sortItems('invoice_date')">Date ↕</th>
+          <th onclick="sortItems('supplier_name')">Supplier ↕</th>
+          <th onclick="sortItems('category')">Category ↕</th>
+          <th onclick="sortItems('department')">Department ↕</th>
+          <th onclick="sortItems('description')">Description ↕</th>
+          <th>Article</th>
+          <th class="num" onclick="sortItems('quantity')">Qty ↕</th>
+          <th class="num" onclick="sortItems('unit_price')">Unit £ ↕</th>
+          <th class="num" onclick="sortItems('total_price')">Total £ ↕</th>
+          <th>Invoice #</th>
+          <th>Comment</th>
+        </tr></thead>
+        <tbody id="li-body"></tbody>
+        <tfoot id="li-foot"></tfoot>
+      </table></div>
+      <div class="pager" id="li-pager"></div>
+    </div>
+  </div>
+</div>
+
+<!-- PRICE TRACKER ──────────────────────────────────────────────────────────── -->
+<div id="page-pricetracker" class="page">
+  <div class="card">
+    <h2>Price Tracker</h2>
+    <p style="color:var(--muted);font-size:12px;margin:-4px 0 12px">Unit prices per SKU across all invoices. Article number used as key where available, description otherwise. Click a row to expand purchase history.</p>
+    <div class="controls">
+      <input type="text" id="pt-search" placeholder="Search article or description…" oninput="filterPT()">
+      <select id="pt-sup-filter" onchange="filterPT()"><option value="">All Suppliers</option></select>
+      <select id="pt-cat-filter" onchange="filterPT()"><option value="">All Categories</option></select>
+      <select id="pt-min-app" onchange="filterPT()">
+        <option value="1">All items</option>
+        <option value="2" selected>2+ appearances</option>
+        <option value="3">3+ appearances</option>
+        <option value="5">5+ appearances</option>
+        <option value="10">10+ appearances</option>
+      </select>
+    </div>
+    <div class="tbl-wrap" style="max-height:none;"><table>
+      <thead><tr>
+        <th onclick="sortPT('item_key')">Item ↕</th>
+        <th onclick="sortPT('category')">Category ↕</th>
+        <th onclick="sortPT('supplier')">Supplier ↕</th>
+        <th class="num" onclick="sortPT('appearances')"># ↕</th>
+        <th onclick="sortPT('first_date')">First Date ↕</th>
+        <th onclick="sortPT('latest_date')">Latest Date ↕</th>
+        <th class="num" onclick="sortPT('first_price')">First £ ↕</th>
+        <th class="num" onclick="sortPT('latest_price')">Latest £ ↕</th>
+        <th class="num" onclick="sortPT('drift')">Drift % ↕</th>
+      </tr></thead>
+      <tbody id="pt-body"></tbody>
+    </table></div>
+    <div class="pager" id="pt-pager"></div>
+  </div>
+</div>
+
+<!-- SERVICE CONTRACTS INTELLIGENCE ─────────────────────────────────────────── -->
+<div id="page-svccontracts" class="page">
+  <div class="kpis">
+    <div class="kpi" style="--kcolor:#4ecdc4"><div class="label">Service Lines</div><div class="value" id="svc-kpi-lines">—</div><div class="sub">active contract items</div></div>
+    <div class="kpi" style="--kcolor:#6c7cff"><div class="label">Gross Value</div><div class="value" id="svc-kpi-value">—</div><div class="sub">before discounts</div></div>
+    <div class="kpi" style="--kcolor:#56cf8e"><div class="label">Products</div><div class="value" id="svc-kpi-products">—</div><div class="sub">distinct article numbers</div></div>
+    <div class="kpi" style="--kcolor:#ff9f43"><div class="label">Price Variances</div><div class="value" id="svc-kpi-variances">—</div><div class="sub" id="svc-kpi-var-sub">products with dept price gaps</div></div>
+    <div class="kpi" style="--kcolor:#c77dff"><div class="label">Discount Range</div><div class="value" id="svc-kpi-disc">—</div><div class="sub">across departments</div></div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h2 id="svc-tier-heading">Spend by Service Tier</h2>
+      <canvas id="c-svc-tier" height="240"></canvas>
+    </div>
+    <div class="card">
+      <h2 id="svc-disc-heading">Discount % by Department</h2>
+      <canvas id="c-svc-disc" height="240"></canvas>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="card span2">
+      <h2>Service Tier × Department</h2>
+      <canvas id="c-svc-tierdept" height="110"></canvas>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    <h2>⚠ Price Variance Alerts — Same Article, Different Price by Department</h2>
+    <div class="tbl-wrap" style="max-height:360px"><table>
+      <thead><tr><th>Article</th><th>Product</th><th>Tier</th><th class="num">Lowest List £</th><th class="num">Highest List £</th><th class="num">Lowest Net £</th><th class="num">Highest Net £</th><th class="num">Net Δ/month</th><th>Departments (disc%)</th></tr></thead>
+      <tbody id="svc-var-body"></tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <h2>Full Product Pricing Catalogue</h2>
+    <div class="controls">
+      <select id="svc-tier-filter" onchange="renderSvcProducts()"><option value="">All Tiers</option></select>
+      <select id="svc-var-filter" onchange="renderSvcProducts()">
+        <option value="">All Products</option>
+        <option value="var">Price Variances Only</option>
+      </select>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr>
+        <th onclick="sortSvcProd('article')">Article ↕</th>
+        <th onclick="sortSvcProd('desc')">Description ↕</th>
+        <th onclick="sortSvcProd('tier')">Tier ↕</th>
+        <th class="num" onclick="sortSvcProd('price')">List £/unit ↕</th>
+        <th class="num">Net £/unit</th>
+        <th class="num" onclick="sortSvcProd('total')">Gross Total £ ↕</th>
+        <th>Departments</th>
+        <th>Status</th>
+      </tr></thead>
+      <tbody id="svc-prod-body"></tbody>
+    </table></div>
+    <div class="pager" id="svc-prod-pager"></div>
+  </div>
+
+  <!-- ── Contract Timeline ──────────────────────────────────────────────── -->
+  <div class="card" id="svc-timeline-card" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <h2 style="margin:0">📅 Contract Timeline</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="tl-sup" onchange="renderTimeline()" style="font-size:11px;padding:4px 8px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;display:none">
+          <option value="">All suppliers</option>
+        </select>
+        <button onclick="exportTimelineCsv()" style="font-size:11px;padding:5px 12px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;cursor:pointer">⬇ Export CSV</button>
+      </div>
+    </div>
+    <!-- Renewal summary KPIs -->
+    <div id="tl-renewal-kpis" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;font-size:12px"></div>
+
+    <!-- Gantt filters -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;padding:8px 10px;background:var(--surf2);border-radius:6px;border:1px solid var(--border)">
+      <span style="font-size:11px;font-weight:600;color:var(--muted)">Gantt filter:</span>
+      <select id="gf-dept"   onchange="renderTimeline()" style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px"><option value="">All departments</option></select>
+      <select id="gf-tier"   onchange="renderTimeline()" style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px"><option value="">All tiers</option></select>
+      <select id="gf-status" onchange="renderTimeline()" style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px">
+        <option value="">All statuses</option>
+        <option value="active">Active</option>
+        <option value="future">Future</option>
+        <option value="expired_renewed">Expired (renewed)</option>
+        <option value="expired_lapsed">Expired (lapsed)</option>
+      </select>
+      <input id="gf-instr"  oninput="renderTimeline()" placeholder="Instrument…" style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px;width:130px">
+      <input id="gf-serial" oninput="renderTimeline()" placeholder="Serial no…"  style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px;width:100px">
+      <button onclick="clearGanttFilters()" style="font-size:11px;padding:3px 10px;background:var(--surf);border:1px solid var(--border);color:var(--muted);border-radius:4px;cursor:pointer">✕ Clear</button>
+    </div>
+
+    <!-- Gantt chart (serial-centric) -->
+    <div id="tl-gantt-wrap" style="overflow-x:auto;margin-bottom:18px">
+      <div id="tl-gantt" style="position:relative;min-width:700px"></div>
+    </div>
+
+    <!-- Table with per-column filters -->
+    <div class="tbl-wrap">
+      <table id="tl-table">
+        <thead>
+          <tr>
+            <th onclick="sortTimeline('start')">Start ↕</th>
+            <th onclick="sortTimeline('end')">End ↕</th>
+            <th>Duration</th>
+            <th onclick="sortTimeline('dept')">Department ↕</th>
+            <th onclick="sortTimeline('tier')">Tier ↕</th>
+            <th onclick="sortTimeline('instrument')">Instrument ↕</th>
+            <th onclick="sortTimeline('serial')">Serial No ↕</th>
+            <th class="num" onclick="sortTimeline('total')">Cost (£) ↕</th>
+            <th>Invoice #</th>
+            <th onclick="sortTimeline('status')">Status ↕</th>
+          </tr>
+          <tr id="tl-filter-row" style="background:var(--surf2)">
+            <th><input class="col-filter" id="tlf-start"      placeholder="e.g. 2025" oninput="renderTimeline()"></th>
+            <th><input class="col-filter" id="tlf-end"        placeholder="e.g. 2026" oninput="renderTimeline()"></th>
+            <th></th>
+            <th><select class="col-filter" id="tlf-dept"      onchange="renderTimeline()"><option value="">All</option></select></th>
+            <th><select class="col-filter" id="tlf-tier"      onchange="renderTimeline()"><option value="">All</option></select></th>
+            <th><input class="col-filter" id="tlf-instrument" placeholder="filter…"    oninput="renderTimeline()"></th>
+            <th><input class="col-filter" id="tlf-serial"     placeholder="filter…"    oninput="renderTimeline()"></th>
+            <th><input class="col-filter" id="tlf-cost"       placeholder="min £"  type="number" oninput="renderTimeline()" style="width:80px"></th>
+            <th><input class="col-filter" id="tlf-invoice"    placeholder="filter…"    oninput="renderTimeline()"></th>
+            <th><select class="col-filter" id="tlf-status"    onchange="renderTimeline()">
+              <option value="">All</option>
+              <option value="active">🟢 Active</option>
+              <option value="expired_lapsed">🔴 Needs renewal</option>
+              <option value="expired_renewed">🟡 Renewed</option>
+              <option value="future">🔵 Future</option>
+            </select></th>
+          </tr>
+        </thead>
+        <tbody id="tl-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Reagents Intel ────────────────────────────────────────────────────── -->
+<div id="page-reagents" class="page">
+  <div class="kpis">
+    <div class="kpi" style="--kcolor:#a78bfa"><div class="label">Reagent Spend</div><div class="value" id="rg-kpi-spend">—</div><div class="sub">Consumables only</div></div>
+    <div class="kpi" style="--kcolor:#6c7cff"><div class="label">Unique SKUs</div><div class="value" id="rg-kpi-skus">—</div><div class="sub">distinct articles</div></div>
+    <div class="kpi" style="--kcolor:#f97316"><div class="label" id="rg-kpi-top-label">Top Supplier</div><div class="value" id="rg-kpi-top" style="font-size:13px;padding-top:4px">—</div><div class="sub" id="rg-kpi-top-sub">by consumable spend</div></div>
+    <div class="kpi" style="--kcolor:#56cf8e"><div class="label">Top Department</div><div class="value" id="rg-kpi-dept" style="font-size:12px;padding-top:4px;line-height:1.3">—</div><div class="sub">by consumable spend</div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card span2">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <h2 style="margin:0" id="rg-main-chart-title">Consumable Spend by Supplier</h2>
+        <span id="rg-main-reset" style="display:none;font-size:11px;color:var(--muted);cursor:pointer" onclick="clearRgMainSelect()">✕ Clear filter</span>
+      </div>
+      <canvas id="c-rg-main" height="180"></canvas>
+    </div>
+  </div>
+
+  <div class="grid2" id="rg-drill-section" style="display:none">
+    <div class="card">
+      <h2 id="rg-dept-title">By Department</h2>
+      <canvas id="c-rg-dept" height="240"></canvas>
+    </div>
+    <div class="card">
+      <h2 id="rg-sku-title">Top SKUs</h2>
+      <div class="tbl-wrap" style="max-height:280px"><table>
+        <thead><tr><th>Article</th><th>Description</th><th class="num">Spend</th></tr></thead>
+        <tbody id="rg-sku-mini-body"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Reagent Catalogue</h2>
+    <div class="controls" style="gap:8px;flex-wrap:wrap">
+      <input id="rg-search" placeholder="Search article / description / invoice…" oninput="renderRgTable()"
+             style="flex:1;min-width:200px;padding:6px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:12px">
+      <select id="rg-sup-filter" onchange="renderRgTable()"
+              style="padding:6px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:12px">
+        <option value="">All Suppliers</option>
+      </select>
+      <select id="rg-dept-filter" onchange="renderRgTable()"
+              style="padding:6px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:12px">
+        <option value="">All Departments</option>
+      </select>
+    </div>
+    <div class="tbl-wrap" style="margin-top:10px"><table>
+      <thead><tr>
+        <th onclick="sortRg('article')">Article ↕</th>
+        <th onclick="sortRg('description')">Description ↕</th>
+        <th onclick="sortRg('supplier_name')">Supplier ↕</th>
+        <th onclick="sortRg('invoice_number')">Invoice ↕</th>
+        <th onclick="sortRg('invoice_date')">Date ↕</th>
+        <th onclick="sortRg('department')">Department ↕</th>
+        <th class="num" onclick="sortRg('quantity')">Qty ↕</th>
+        <th class="num" onclick="sortRg('unit_price')">Unit Price ↕</th>
+        <th class="num" onclick="sortRg('total_price')">Total ↕</th>
+      </tr></thead>
+      <tbody id="rg-tbody"></tbody>
+    </table></div>
+    <div class="pager" id="rg-pager"></div>
+  </div>
+</div>
+
+<!-- ── Reports ──────────────────────────────────────────────────────────── -->
+<div id="page-reports" class="page">
+  <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:16px">📊 Intelligence Reports</div>
+  <div style="display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start">
+
+    <!-- ── Configure panel ─────────────────────────────────────────────── -->
+    <div style="background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:14px">
+      <div style="font-size:12px;font-weight:700;color:var(--text)">Configure</div>
+
+      <!-- Theme -->
+      <div>
+        <div class="rpt-sect-label">Theme</div>
+        <div id="rpt-theme-list"></div>
+      </div>
+
+      <div style="border-top:1px solid var(--border)"></div>
+
+      <!-- Scope -->
+      <div>
+        <div class="rpt-sect-label">Scope</div>
+        <div id="rpt-scope-list" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+      </div>
+
+      <!-- Supplier picker — shown when scope = One supplier -->
+      <div id="rpt-sup-wrap" style="display:none">
+        <div class="rpt-sect-label" style="color:var(--accent)">Supplier ✱</div>
+        <select id="rpt-sup-pick" style="width:100%;font-size:12px;padding:6px 10px;background:var(--surf2);border:1px solid var(--accent);color:var(--text);border-radius:6px;outline:none"></select>
+      </div>
+
+      <!-- Department picker — shown when scope = One department -->
+      <div id="rpt-dept-wrap" style="display:none">
+        <div class="rpt-sect-label" style="color:var(--accent)">Department ✱</div>
+        <select id="rpt-dept-pick" style="width:100%;font-size:12px;padding:6px 10px;background:var(--surf2);border:1px solid var(--accent);color:var(--text);border-radius:6px;outline:none"></select>
+      </div>
+
+      <!-- Category filter — always visible, optional -->
+      <div>
+        <div class="rpt-sect-label">Category filter <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px">(optional)</span></div>
+        <select id="rpt-cat-pick" style="width:100%;font-size:12px;padding:6px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;outline:none">
+          <option value="">All categories</option>
+        </select>
+      </div>
+
+      <!-- Invoice date range — filters by invoice_date only -->
+      <div>
+        <div class="rpt-sect-label">Invoice date range <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px">(optional)</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div>
+            <div style="font-size:10px;color:var(--muted);margin-bottom:3px">From</div>
+            <input type="date" id="rpt-date-from" style="width:100%;box-sizing:border-box;font-size:12px;padding:5px 8px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;outline:none">
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--muted);margin-bottom:3px">To</div>
+            <input type="date" id="rpt-date-to" style="width:100%;box-sizing:border-box;font-size:12px;padding:5px 8px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;outline:none">
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px">Filters by invoice date only — not contract or delivery dates.</div>
+      </div>
+
+      <div style="border-top:1px solid var(--border)"></div>
+
+      <!-- Section focus -->
+      <div id="rpt-focus-wrap">
+        <div class="rpt-sect-label">Section focus</div>
+        <div id="rpt-focus-list" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+      </div>
+
+      <!-- Custom prompt — shown when theme = custom -->
+      <div id="rpt-custom-wrap" style="display:none">
+        <div class="rpt-sect-label" style="color:var(--accent)">Your brief ✱</div>
+        <textarea id="rpt-custom-prompt" rows="7" placeholder="Describe the report you want. E.g.:&#10;&#10;Produce a comparison of price drift on consumables across the four most-used suppliers. Highlight items where the unit price has risen more than 8% year-on-year and propose a re-tender shortlist." style="width:100%;box-sizing:border-box;font-size:12px;line-height:1.5;padding:8px 10px;background:var(--surf2);border:1px solid var(--accent);color:var(--text);border-radius:6px;outline:none;resize:vertical;font-family:inherit"></textarea>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px">Data context (supplier/category/department totals, top invoices) is attached automatically.</div>
+      </div>
+
+      <div style="border-top:1px solid var(--border)"></div>
+
+      <!-- Model -->
+      <div>
+        <div class="rpt-sect-label">Model</div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px">
+          <div class="rpt-opt rpt-opt-pill rpt-opt-active" id="rpt-model-claude" onclick="rptSetBackend('anthropic')">Claude (Anthropic)</div>
+          <div class="rpt-opt rpt-opt-pill" id="rpt-model-qwen" onclick="rptSetBackend('qwen')">Qwen (local)</div>
+        </div>
+        <div id="rpt-cost-hint" style="font-size:11px;color:var(--muted);margin-top:7px">~$1.20 · 30–90 s</div>
+      </div>
+
+      <!-- Generate button -->
+      <button id="rpt-gen-btn" onclick="generateReportV2()" style="font-size:12px;padding:10px 14px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;text-align:left;line-height:1.4">Generate<br><span id="rpt-gen-label" style="font-size:13px">📊 Commercial Intelligence</span></button>
+
+      <!-- Status bar -->
+      <div id="rpt-status" style="display:none;padding:12px 14px;background:var(--surf2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted);align-items:center;gap:10px">
+        <div style="width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0"></div>
+        <span id="rpt-status-text" style="flex:1">Generating…</span>
+        <button onclick="cancelReport()" style="font-size:11px;padding:4px 10px;background:#e53;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;flex-shrink:0">Cancel</button>
+      </div>
+
+      <!-- Error panel (persists until dismissed) -->
+      <div id="rpt-error" style="display:none;padding:12px 14px;background:#3d1a1a;border:1px solid #c44;border-radius:8px;font-size:12px;color:#ffc0c0;gap:10px;flex-direction:column">
+        <div style="display:flex;align-items:flex-start;gap:8px">
+          <span aria-hidden="true" style="font-size:16px;line-height:1">⚠</span>
+          <div style="flex:1">
+            <div style="font-weight:600;color:#ffd0d0;margin-bottom:4px">Report generation failed</div>
+            <div id="rpt-error-text" style="line-height:1.45;color:#ffc0c0">—</div>
+            <div id="rpt-error-hint" style="margin-top:8px;color:#d99;font-size:11px"></div>
+          </div>
+          <button id="rpt-error-dismiss" style="font-size:11px;padding:4px 10px;background:transparent;color:#ffc0c0;border:1px solid #c44;border-radius:6px;cursor:pointer;flex-shrink:0">Dismiss</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Viewer panel ────────────────────────────────────────────────── -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      <!-- Viewer -->
+      <div id="rpt-viewer-wrap" style="display:none">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+          <div style="flex:1;min-width:0">
+            <div id="rpt-viewer-title" style="font-size:14px;font-weight:700;color:var(--text)"></div>
+            <div style="display:flex;gap:12px;margin-top:4px;flex-wrap:wrap">
+              <span id="rpt-viewer-date" style="font-size:11px;color:var(--muted)"></span>
+              <span id="rpt-viewer-cost" style="font-size:11px;color:var(--muted);font-family:monospace"></span>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
+            <a id="rpt-viewer-link" href="#" target="_blank" rel="noopener" style="font-size:12px;padding:6px 14px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;text-decoration:none;white-space:nowrap">Open full-screen ↗</a>
+            <button onclick="rptCloseViewer()" title="Close preview" style="font-size:16px;padding:4px 10px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:6px;cursor:pointer;line-height:1">✕</button>
+          </div>
+        </div>
+        <iframe id="rpt-iframe" src="" style="width:100%;height:860px;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>
+      </div>
+
+      <!-- Archive card grid / empty state -->
+      <div id="rpt-viewer-empty">
+        <div id="rpt-card-grid" style="display:none;grid-template-columns:repeat(3,1fr);gap:12px"></div>
+        <div id="rpt-card-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:400px;color:var(--muted);text-align:center">
+          <div style="font-size:44px;margin-bottom:12px">📑</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:6px">No reports yet</div>
+          <div style="font-size:12px;line-height:1.6">Configure a report on the left and click Generate.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{DATA_FILE}}"></script>
+<script>
+// ── Data ───────────────────────────────────────────────────────────────────
+const SUP_TOTALS   = {{SUP_TOTALS_JSON}};
+const CAT_TOTALS   = {{CAT_TOTALS_JSON}};
+const DEPT_TOTALS  = {{DEPT_TOTALS_JSON}};
+const CAT_DEPT     = {{CAT_DEPT_JSON}};
+const MONTHLY_CAT  = {{MONTHLY_CAT_JSON}};
+const MONTHLY_SUP  = {{MONTHLY_SUP_JSON}};
+const CAT_SUPPLIER = {{CAT_SUPPLIER_JSON}};
+
+const SUP_NAMES  = {{SUP_NAMES_JSON}};
+const SUP_COLORS = {{SUP_COLORS_JSON}};
+const SUP_KEYS   = {{SUP_KEYS_JSON}};   // internal supplier keys, parallel to SUP_NAMES
+
+// ── Static palette constants (no data dependency) ──────────────────────────
+const CAT_PAL  = ['#6c7cff','#4ecdc4','#ff9f43','#ff6b6b','#56cf8e','#ffe66d',
+                  '#c77dff','#f7b731','#a8edea','#fd79a8','#96e6a1','#fab1a0',
+                  '#74b9ff','#81ecec','#dfe6e9','#b2bec3','#fdcb6e','#e17055',
+                  '#00cec9','#636e72','#aaa'];
+const DEPT_PAL = ['#4ecdc4','#ff9f43','#ff6b6b','#56cf8e','#ffe66d',
+                  '#c77dff','#f7b731','#a8edea','#fd79a8','#96e6a1','#fab1a0',
+                  '#74b9ff','#81ecec','#dfe6e9','#b2bec3','#fdcb6e','#e17055',
+                  '#00cec9','#636e72','#6c7cff'];
+const gc='#282d4a', tc='#8b93be';
+
+// ── Data-derived palette vars ────────────────────────────────────────────────
+const ALL_CATS = [...new Set(ITEMS.map(i=>i.category))].sort();
+const CAT_COLOR = {};
+ALL_CATS.forEach((c,i)=>CAT_COLOR[c]=CAT_PAL[i]||'#aaa');
+CAT_COLOR['Uncategorised'] = '#ff9f43';
+Object.assign(CAT_COLOR, {{CAT_COLOR_OVERRIDES_JSON}});
+
+const ALL_DEPTS = [...new Set(ITEMS.map(i=>i.department))].sort();
+const DEPT_COLOR = {};
+ALL_DEPTS.forEach((d,i)=>DEPT_COLOR[d]=DEPT_PAL[i%DEPT_PAL.length]);
+
+// ── Global supplier filter ──────────────────────────────────────────────────
+const _SVC_ALL = SVC;   // backup of merged-all SVC for restoring when "All" is selected
+let G_SUP = '';   // '' = all
+const gsup = document.getElementById('global-sup');
+// Reset dropdown to "All" on every load (prevents browser form-state restoration)
+if(gsup) gsup.value = '';
+
+function applyGlobalSupFilter(){
+  G_SUP=gsup?gsup.value:'';
+  // Swap SVC to per-supplier data when a supplier is selected
+  SVC = (G_SUP && SVC_BY_SUP[G_SUP]) ? SVC_BY_SUP[G_SUP] : _SVC_ALL;
+  // Sync per-tab supplier selects
+  ['inv-sup','li-sup','pt-sup-filter'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=G_SUP;});
+  rebuildAllCharts();
+  filterInvoices();
+  filterItems();
+  updateKPIs();
+  renderSvcSection();
+}
+
+// ── Nav ────────────────────────────────────────────────────────────────────
+function showPage(id,el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  el.classList.add('active');
+  if(id==='overview'){buildMonthly();buildSankey();buildSupCards();buildTreemap();}
+  else if(id==='categories'){buildCatTable();renderTopItems();}
+  else if(id==='departments'){buildDeptCharts();buildMatrix();}
+  else if(id==='invoices'){
+    const v=document.getElementById('inv-view-sel').value;
+    if(v==='lineitems') filterItems(); else filterInvoices();
+  }
+  else if(id==='pricetracker'){buildPriceTracker();}
+  else if(id==='suppliers'){buildMonthlyBySup();buildCatBySup();}
+  else if(id==='svccontracts'){renderSvcSection();}
+  else if(id==='reagents'){initReagents();}
+}
+
+// ── Invoice/Line Items view toggle ─────────────────────────────────────────
+function switchInvView(){
+  const v=document.getElementById('inv-view-sel').value;
+  const isInv=v==='invoices';
+  document.getElementById('inv-ctrl').style.display=isInv?'':'none';
+  document.getElementById('inv-section').style.display=isInv?'':'none';
+  document.getElementById('li-ctrl').style.display=isInv?'none':'';
+  document.getElementById('li-section').style.display=isInv?'none':'';
+  document.getElementById('inv-view-title').textContent=isInv?'All Invoices':'All Line Items';
+  if(isInv) filterInvoices(); else filterItems();
+}
+
+// ── Formatters ─────────────────────────────────────────────────────────────
+function gbp(v){if(v==null)return'—';return'£'+v.toLocaleString('en-GB',{minimumFractionDigits:0,maximumFractionDigits:0});}
+function gbp2(v){if(v==null)return'—';return'£'+v.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2});}
+
+function renderPager(id,total,ps,cur,cb){
+  const pages=Math.ceil(total/ps);
+  const el=document.getElementById(id);
+  if(pages<=1){el.innerHTML=`<span>${total} records</span>`;return;}
+  let h=`<span>${total} records</span>`;
+  h+=`<button onclick="${cb}(${cur-1})" ${cur===1?'disabled':''}>‹</button>`;
+  for(let i=1;i<=pages;i++){
+    if(i===1||i===pages||Math.abs(i-cur)<=1)
+      h+=`<button class="${i===cur?'active':''}" onclick="${cb}(${i})">${i}</button>`;
+    else if(Math.abs(i-cur)===2) h+='<span>…</span>';
+  }
+  h+=`<button onclick="${cb}(${cur+1})" ${cur===pages?'disabled':''}>›</button>`;
+  el.innerHTML=h;
+}
+
+// ── Filtered data helpers ──────────────────────────────────────────────────
+function filtItems(){return G_SUP?ITEMS.filter(i=>i.supplier_name===G_SUP):ITEMS;}
+function filtInvs() {return G_SUP?INVOICES.filter(i=>i.supplier_name===G_SUP):INVOICES;}
+
+// ── KPIs ───────────────────────────────────────────────────────────────────
+function updateKPIs(){
+  const invs=filtInvs();
+  const its=filtItems();
+  const grand=invs.reduce((s,i)=>s+(i.total_amount||0),0);
+  document.getElementById('kpi-grand').textContent=gbp(grand);
+  const catMap={};
+  its.forEach(i=>{if(i.total_price==null)return;catMap[i.category]=(catMap[i.category]||0)+i.total_price;});
+  const topCat=Object.entries(catMap).sort((a,b)=>b[1]-a[1])[0];
+  if(topCat){
+    document.getElementById('kpi-top-cat').textContent=topCat[0];
+    document.getElementById('kpi-top-cat-sub').textContent=gbp(topCat[1]);
+  }
+  const deptMap={};
+  invs.forEach(i=>{deptMap[i.department]=(deptMap[i.department]||0)+(i.total_amount||0);});
+  const topDept=Object.entries(deptMap).sort((a,b)=>b[1]-a[1])[0];
+  if(topDept){
+    document.getElementById('kpi-top-dept').textContent=topDept[0];
+    document.getElementById('kpi-top-dept-sub').textContent=gbp(topDept[1]);
+  }
+}
+
+// ── Chart registry (destroy before rebuild) ────────────────────────────────
+const _charts={};
+function mkChart(id,cfg){
+  if(_charts[id])_charts[id].destroy();
+  _charts[id]=new Chart(document.getElementById(id),cfg);
+  return _charts[id];
+}
+
+// ── Month helpers ────────────────────────────────────────────────────────────
+const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtMonth(ym){const[y,m]=ym.split('-');return MONTH_NAMES[+m-1]+' '+y;}
+function parseYM(d){
+  if(!d) return null;
+  const dm=d.match(/^(\d{2})[.\/](\d{2})[.\/](\d{4})$/);
+  if(dm) return dm[3]+'-'+dm[2];
+  if(d.length>=7&&d[4]==='-') return d.slice(0,7);
+  return null;
+}
+function monthRange(startYM,n){
+  let[y,m]=startYM.split('-').map(Number);
+  const r=[];for(let i=0;i<n;i++){r.push(y+'-'+String(m).padStart(2,'0'));if(++m>12){m=1;y++;}}
+  return r;
+}
+function last12Months(maxYM){
+  let[y,m]=maxYM.split('-').map(Number);
+  m-=11;if(m<=0){m+=12;y--;}
+  return monthRange(y+'-'+String(m).padStart(2,'0'),12);
+}
+function dataMonthRange(dataArr,monthKey){
+  monthKey=monthKey||'month';
+  const today=new Date();
+  const curYM=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0');
+  const yms=dataArr.map(d=>d[monthKey]).filter(Boolean);
+  const minYM=yms.length?yms.reduce((a,b)=>a<b?a:b):curYM;
+  const[y0,m0]=minYM.split('-').map(Number);
+  const[y1,m1]=curYM.split('-').map(Number);
+  const n=Math.max((y1-y0)*12+(m1-m0)+1,1);
+  return monthRange(minYM,n);
+}
+function last12FromData(){
+  const today=new Date();
+  const curYM=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0');
+  return last12Months(curYM);
+}
+
+// ── Monthly by category chart (rebuilds on filter change) ──────────────────
+function buildMonthly(){
+  const its=filtItems();
+  const months=last12FromData(MONTHLY_CAT);
+  const labels=months.map(fmtMonth);
+  const cats=[...new Set(its.map(i=>i.category))];
+  const datasets=cats.map((cat,idx)=>{
+    const col=CAT_COLOR[cat]||CAT_PAL[idx]||'#aaa';
+    return {label:cat,
+             data:months.map(m=>its.filter(i=>parseYM(i.invoice_date)===m&&i.category===cat).reduce((s,i)=>s+(i.total_price||0),0)),
+             backgroundColor:col+'cc',borderColor:col,borderWidth:1,borderRadius:2,stack:'s'};
+  }).filter(ds=>ds.data.some(v=>v>0));
+  mkChart('c-monthly',{
+    type:'bar',data:{labels,datasets},
+    options:{responsive:true,plugins:{
+      legend:{labels:{color:tc,font:{size:10},boxWidth:12}},
+      tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${gbp(ctx.parsed.y)}`}}
+    },scales:{
+      x:{stacked:true,ticks:{color:tc},grid:{color:gc}},
+      y:{stacked:true,ticks:{color:tc,callback:v=>v>=1e6?'£'+(v/1e6).toFixed(1).replace(/\.0$/,'')+'M':'£'+(v/1000).toFixed(0)+'k'},grid:{color:gc}}
+    }}
+  });
+}
+
+// ── Supplier → Category Sankey (interactive drilldown) ────────────────────
+function buildSankey(filter) {
+  // filter: null/undefined = default view
+  //   {type:'sup', name:'...'} → Category → Department for that supplier
+  //   {type:'cat', name:'...'} → Supplier → Department for that category
+  const f = filter || null;
+  const el = document.getElementById('c-sankey');
+  el.innerHTML = '';
+
+  const its = filtItems().filter(i => i.total_price != null);
+  if (!its.length) return;
+
+  const supColor = {};
+  SUP_TOTALS.forEach(s => supColor[s.display] = s.color);
+
+  const DEPT_PAL = ['#6c7cff','#4ecdc4','#ff9f43','#ff6b6b','#56cf8e','#c77dff',
+                    '#f7b731','#fd79a8','#74b9ff','#00cec9','#e17055','#a29bfe',
+                    '#55efc4','#fdcb6e','#fab1a0','#81ecec'];
+  const deptColorMap = {};
+  function deptColor(n){ if(!deptColorMap[n]) deptColorMap[n]=DEPT_PAL[Object.keys(deptColorMap).length%DEPT_PAL.length]; return deptColorMap[n]; }
+
+  let filteredIts = its, srcField, tgtField, srcColorFn, tgtColorFn, breadcrumb;
+  if (!f) {
+    srcField = 'supplier_name'; tgtField = 'category';
+    srcColorFn = n => supColor[n] || '#6c7cff';
+    tgtColorFn = n => CAT_COLOR[n] || '#4ecdc4';
+    breadcrumb = null;
+  } else if (f.type === 'sup') {
+    filteredIts = its.filter(i => i.supplier_name === f.name);
+    srcField = 'category'; tgtField = 'department';
+    srcColorFn = n => CAT_COLOR[n] || '#4ecdc4';
+    tgtColorFn = deptColor;
+    breadcrumb = f.name + ' — Category → Department';
+  } else {
+    filteredIts = its.filter(i => i.category === f.name);
+    srcField = 'supplier_name'; tgtField = 'department';
+    srcColorFn = n => supColor[n] || '#6c7cff';
+    tgtColorFn = deptColor;
+    breadcrumb = f.name + ' — Supplier → Department';
+  }
+  if (!filteredIts.length) return;
+
+  // Back button
+  if (f) {
+    const bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;color:var(--muted)';
+    bar.innerHTML = '<button onclick="buildSankey(null)" style="font-size:11px;padding:2px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:4px;cursor:pointer">← Back</button>'
+                  + '<span>' + breadcrumb + '</span>';
+    el.appendChild(bar);
+  }
+
+  // Noise labels to suppress
+  const SK_NOISE = new Set(['unknown','uncategorised','other','n/a','none','unspecified','']);
+  const allSupNames = new Set(SUP_TOTALS.map(s => s.display));
+
+  // Aggregate totals first so we can determine top-10 targets before building flowMap
+  const srcTot = {}, tgtTot = {};
+  filteredIts.forEach(i => {
+    const s = i[srcField]||'', t = i[tgtField]||'';
+    if(SK_NOISE.has(s.toLowerCase()) || SK_NOISE.has(t.toLowerCase())) return;
+    // When showing departments on the right, skip any dept whose name is a supplier name
+    if(tgtField === 'department' && allSupNames.has(t)) return;
+    srcTot[s] = (srcTot[s]||0) + i.total_price;
+    tgtTot[t] = (tgtTot[t]||0) + i.total_price;
+  });
+  const tgts = Object.keys(tgtTot).sort((a,b) => tgtTot[b]-tgtTot[a]).slice(0, f ? 10 : undefined);
+  // In drilldown, restrict to top-10 targets before building flowMap
+  if(f){ const tgtSet=new Set(tgts); filteredIts=filteredIts.filter(i=>{ const t=i[tgtField]||''; return tgtSet.has(t); }); }
+  const srcs = Object.keys(srcTot).sort((a,b) => srcTot[b]-srcTot[a]);
+
+  // Build flowMap from the (possibly filtered) items
+  const flowMap = {};
+  filteredIts.forEach(i => {
+    const s = i[srcField]||'', t = i[tgtField]||'';
+    if(SK_NOISE.has(s.toLowerCase()) || SK_NOISE.has(t.toLowerCase())) return;
+    if(tgtField === 'department' && allSupNames.has(t)) return;
+    const k = s + '|||' + t;
+    flowMap[k] = (flowMap[k] || 0) + i.total_price;
+  });
+
+  // Assign dept colours in sorted order so they're stable
+  tgts.forEach(t => deptColor(t));
+
+  // Only keep src nodes that have at least one link in flowMap (eliminates ghost nodes)
+  const activeSrcSet = new Set(Object.keys(flowMap).map(k => k.split('|||')[0]));
+  const activeSrcs = srcs.filter(s => activeSrcSet.has(s));
+
+  const nodeList = [
+    ...activeSrcs.map(n => ({ name: n, side: 'src' })),
+    ...tgts.map(n => ({ name: n, side: 'tgt' }))
+  ];
+  const nodeIdx = {};
+  nodeList.forEach((n, i) => nodeIdx[n.side + ':' + n.name] = i);
+
+  const links = Object.entries(flowMap).map(([k, v]) => {
+    const [s, t] = k.split('|||');
+    return { source: nodeIdx['src:'+s], target: nodeIdx['tgt:'+t], value: v };
+  }).filter(l => l.value > 0);
+
+  const W = Math.round((el.parentElement ? el.parentElement.clientWidth - 36 : 800) * 0.65);
+  const H = Math.round(W * 0.65);
+
+  el.style.width  = W + 'px';
+  el.style.height = (f ? H + 32 : H) + 'px';
+  el.style.margin = '0 auto';
+
+  const svgEl = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svgEl.setAttribute('width', W); svgEl.setAttribute('height', H);
+  svgEl.style.display = 'block';
+  el.appendChild(svgEl);
+  const svg = d3.select(svgEl);
+
+  const sk = d3.sankey()
+    .nodeWidth(14).nodePadding(12)
+    .nodeSort((a,b) => b.value - a.value)
+    .extent([[180, 12], [W - 220, H - 12]]);
+
+  const graph = sk({
+    nodes: nodeList.map(d => Object.assign({}, d)),
+    links: links.map(d => Object.assign({}, d))
+  });
+
+  // Gradients
+  const defs = svg.append('defs');
+  graph.links.forEach((lnk, i) => {
+    const g = defs.append('linearGradient')
+      .attr('id', 'sk-g'+i).attr('gradientUnits','userSpaceOnUse')
+      .attr('x1', lnk.source.x1).attr('x2', lnk.target.x0);
+    g.append('stop').attr('offset','0%')  .attr('stop-color', srcColorFn(lnk.source.name)).attr('stop-opacity',0.5);
+    g.append('stop').attr('offset','100%').attr('stop-color', tgtColorFn(lnk.target.name)).attr('stop-opacity',0.5);
+  });
+
+  // Links
+  svg.append('g').selectAll('path').data(graph.links).join('path')
+    .attr('d', d3.sankeyLinkHorizontal())
+    .attr('stroke', (d,i) => 'url(#sk-g'+i+')')
+    .attr('stroke-width', d => Math.max(1, d.width))
+    .attr('fill','none')
+    .append('title').text(d => d.source.name + ' → ' + d.target.name + ': ' + gbp(d.value));
+
+  // Node rects — clickable on default view
+  const rects = svg.append('g').selectAll('rect').data(graph.nodes).join('rect')
+    .attr('x', d=>d.x0).attr('y', d=>d.y0)
+    .attr('width',  d=>d.x1-d.x0)
+    .attr('height', d=>Math.max(2,d.y1-d.y0))
+    .attr('fill', d => d.side==='src' ? srcColorFn(d.name) : tgtColorFn(d.name))
+    .attr('rx', 3)
+    .style('cursor', !f ? 'pointer' : 'default')
+    .on('click', !f ? (event,d) => {
+      buildSankey(d.side==='src' ? {type:'sup',name:d.name} : {type:'cat',name:d.name});
+    } : null);
+  rects.append('title').text(d => (!f?'Click to drill down: ':'')+d.name+': '+gbp(d.value));
+
+  // Source labels (left) — clickable on default view
+  svg.append('g').selectAll('text').data(graph.nodes.filter(d=>d.side==='src')).join('text')
+    .attr('x', d=>d.x0-8).attr('y', d=>(d.y0+d.y1)/2)
+    .attr('text-anchor','end').attr('dominant-baseline','middle')
+    .attr('fill','#e4e8f5').attr('font-size',11)
+    .style('cursor', !f ? 'pointer' : 'default')
+    .on('click', !f ? (event,d) => buildSankey({type:'sup',name:d.name}) : null)
+    .text(d => d.name);
+
+  // Target labels (right) — clickable on default view
+  svg.append('g').selectAll('text').data(graph.nodes.filter(d=>d.side==='tgt')).join('text')
+    .attr('x', d=>d.x1+8).attr('y', d=>(d.y0+d.y1)/2)
+    .attr('text-anchor','start').attr('dominant-baseline','middle')
+    .attr('fill','#e4e8f5').attr('font-size',11)
+    .style('cursor', !f ? 'pointer' : 'default')
+    .on('click', !f ? (event,d) => buildSankey({type:'cat',name:d.name}) : null)
+    .text(d => d.name + '  ' + gbp(d.value));
+}
+
+// ── Supplier donut (overview) ──────────────────────────────────────────────
+function buildTreemap(){
+  const card = document.getElementById('suppie-card-wrap');
+  const W    = Math.round((card ? card.clientWidth - 36 : 700) * 0.75);
+  const H    = Math.round(W * 0.55);
+
+  const wrap = document.getElementById('c-suppie-wrap');
+  if(!wrap) return;
+  wrap.style.width    = W + 'px';
+  wrap.style.height   = (H + 32) + 'px';  // +32 for control bar
+  wrap.style.margin   = '0 auto';
+  wrap.style.position = 'relative';
+
+  // ── drill state ───────────────────────────────────────────────────────────
+  let drillState = null;
+
+  // Labels to suppress at every level — unknown / catch-all buckets
+  const NOISE = new Set(['uncategorised','other','unknown','unknown dept','n/a','none','unspecified','']);
+
+  const DRILL_PALETTE = [
+    '#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f',
+    '#edc948','#b07aa1','#ff9da7','#9c755f','#bab0ac',
+    '#d4a6c8','#86bcb6','#8cd17d','#f1ce63','#499894'
+  ];
+
+  function render(){
+    wrap.innerHTML = '';
+
+    const its = filtItems().filter(i => i.total_price != null);
+
+    // ── control bar ───────────────────────────────────────────────────────
+    const bar = document.createElement('div');
+    bar.style.cssText = 'height:28px;display:flex;align-items:center;gap:10px;padding:0 4px;margin-bottom:4px';
+    if(drillState){
+      const btn = document.createElement('button');
+      btn.textContent = '← Back';
+      btn.style.cssText = 'font-size:11px;padding:3px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--accent);border-radius:5px;cursor:pointer';
+      btn.onclick = () => { drillState = null; render(); };
+      const lbl = document.createElement('span');
+      lbl.textContent = drillState + ' · Departments';
+      lbl.style.cssText = 'font-size:12px;font-weight:600;color:var(--text)';
+      bar.appendChild(btn);
+      bar.appendChild(lbl);
+    }
+    wrap.appendChild(bar);
+
+    // ── aggregate (noise filtered) ────────────────────────────────────────
+    let hierData;
+    if(!drillState){
+      const catMap = {};
+      its.forEach(i => {
+        const c = i.category||'';
+        if(NOISE.has(c.toLowerCase())) return;
+        catMap[c] = (catMap[c]||0) + i.total_price;
+      });
+      hierData = {name:'root', children:
+        Object.entries(catMap).map(([name, value]) => ({name, value}))
+      };
+    } else {
+      const deptMap = {};
+      its.filter(i => (i.category||'') === drillState)
+         .forEach(i => {
+           const d = i.department||'';
+           if(NOISE.has(d.toLowerCase())) return;
+           deptMap[d] = (deptMap[d]||0) + i.total_price;
+         });
+      hierData = {name:'root', children:
+        Object.entries(deptMap).map(([name, value]) => ({name, value}))
+      };
+    }
+
+    const root = d3.hierarchy(hierData).sum(d=>d.value||0).sort((a,b)=>b.value-a.value);
+
+    d3.treemap()
+      .size([W, H])
+      .tile(d3.treemapResquarify)
+      .paddingOuter(3)
+      .paddingInner(2)
+      (root);
+
+    // ── color ─────────────────────────────────────────────────────────────
+    // Top level: per-category brand colour; drill level: distinct palette per dept
+    function nodeColor(d, idx){
+      if(!drillState) return CAT_COLOR[d.data.name]||'#6c7cff';
+      return DRILL_PALETTE[idx % DRILL_PALETTE.length];
+    }
+
+    const svg = d3.select(wrap).append('svg')
+      .attr('width', W).attr('height', H)
+      .style('font-family','inherit').style('display','block');
+
+    const leaves = root.leaves();
+
+    const nodes = svg.selectAll('g.tm-node')
+      .data(leaves)
+      .join('g').attr('class','tm-node')
+      .style('cursor', drillState ? 'default' : 'pointer')
+      .on('click', (ev, d) => {
+        if(!drillState){ drillState = d.data.name; render(); }
+      });
+
+    nodes.append('rect')
+      .attr('x', d=>d.x0).attr('y', d=>d.y0)
+      .attr('width',  d=>Math.max(0, d.x1-d.x0))
+      .attr('height', d=>Math.max(0, d.y1-d.y0))
+      .attr('fill',   (d,i)=>nodeColor(d,i))
+      .attr('rx', 3)
+      .attr('stroke','rgba(255,255,255,0.55)')
+      .attr('stroke-width', 1.5)
+      .append('title').text(d => `${d.data.name}\n${gbp(d.value)}`);
+
+    // Name label
+    nodes.filter(d=>(d.x1-d.x0)>55 && (d.y1-d.y0)>22)
+      .append('text')
+      .attr('x', d=>d.x0+7).attr('y', d=>d.y0+17)
+      .attr('fill','#fff').attr('font-size',12).attr('font-weight','700')
+      .attr('pointer-events','none')
+      .text(d => {
+        const w = d.x1-d.x0;
+        const maxC = Math.max(0, Math.floor(w/7)-1);
+        return d.data.name.length > maxC ? d.data.name.slice(0,maxC-1)+'…' : d.data.name;
+      });
+
+    // Value label
+    nodes.filter(d=>(d.x1-d.x0)>55 && (d.y1-d.y0)>38)
+      .append('text')
+      .attr('x', d=>d.x0+7).attr('y', d=>d.y0+33)
+      .attr('fill','rgba(255,255,255,0.82)').attr('font-size',10)
+      .attr('pointer-events','none')
+      .text(d => gbp(d.value));
+
+    const leg = document.getElementById('suppie-legend');
+    if(leg) leg.innerHTML = '';
+  }
+
+  render();
+}
+buildTreemap();
+
+// ── Monthly by supplier ────────────────────────────────────────────────────
+function buildMonthlyBySup(){
+  const sups=G_SUP?SUP_TOTALS.filter(s=>s.display===G_SUP):SUP_TOTALS;
+  const months=last12FromData(MONTHLY_SUP);
+  const labels=months.map(fmtMonth);
+  const datasets=sups.map(s=>{
+    const col=s.color;
+    return {label:s.display,
+             data:months.map(m=>{const f=MONTHLY_SUP.find(d=>d.month===m&&d.sup===s.display);return f?f.total:0;}),
+             backgroundColor:col+'99',borderColor:col,borderWidth:1.5,
+             tension:0.3,fill:false};
+  });
+  mkChart('c-monthly-sup',{
+    type:'line',data:{labels,datasets},
+    options:{responsive:true,plugins:{
+      legend:{labels:{color:tc,font:{size:10},boxWidth:12}},
+      tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${gbp(ctx.parsed.y)}`}}
+    },scales:{
+      x:{ticks:{color:tc},grid:{color:gc}},
+      y:{ticks:{color:tc,callback:v=>v>=1e6?'£'+(v/1e6).toFixed(1).replace(/\.0$/,'')+'M':'£'+(v/1000).toFixed(0)+'k'},grid:{color:gc}}
+    }}
+  });
+}
+buildMonthlyBySup();
+
+// ── Category mix by supplier (grouped bar) ────────────────────────────────
+function buildCatBySup(){
+  const sups=G_SUP?SUP_TOTALS.filter(s=>s.display===G_SUP):SUP_TOTALS;
+  const catSup=G_SUP?CAT_SUPPLIER.filter(d=>d.sup===G_SUP):CAT_SUPPLIER;
+  const cats=[...new Set(catSup.map(d=>d.cat))].sort((a,b)=>{
+    const sa=catSup.filter(x=>x.cat===a).reduce((s,x)=>s+x.total,0);
+    const sb=catSup.filter(x=>x.cat===b).reduce((s,x)=>s+x.total,0);
+    return sb-sa;
+  }).slice(0,10);
+  const datasets=sups.map(s=>{
+    const col=s.color;
+    return {label:s.display,
+             data:cats.map(cat=>{const f=catSup.find(x=>x.cat===cat&&x.sup===s.display);return f?f.total:0;}),
+             backgroundColor:col+'cc',borderColor:col,borderWidth:1,borderRadius:3};
+  });
+  mkChart('c-catbysup',{
+    type:'bar',data:{labels:cats,datasets},
+    options:{responsive:true,plugins:{
+      legend:{labels:{color:tc,font:{size:10},boxWidth:12}},
+      tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${gbp(ctx.parsed.y)}`}}
+    },scales:{
+      x:{ticks:{color:tc,font:{size:9},maxRotation:30},grid:{color:gc}},
+      y:{ticks:{color:tc,callback:v=>v>=1e6?'£'+(v/1e6).toFixed(1).replace(/\.0$/,'')+'M':'£'+(v/1000).toFixed(0)+'k'},grid:{color:gc}}
+    }}
+  });
+}
+buildCatBySup();
+
+// ── Category table + bar (filtered) ──────────────────────────────────────
+function buildCatTable(){
+  const its=filtItems();
+  const catMap={};
+  its.forEach(i=>{if(i.total_price!=null){
+    catMap[i.category]=catMap[i.category]||{count:0,total:0};
+    catMap[i.category].count++;catMap[i.category].total+=i.total_price;
+  }});
+  const sorted=Object.entries(catMap).sort((a,b)=>b[1].total-a[1].total);
+  const grand=sorted.reduce((s,c)=>s+c[1].total,0);
+  document.getElementById('cat-table').innerHTML=sorted.map(([cat,v])=>{
+    const pct=grand>0?(v.total/grand*100).toFixed(1):'0.0';
+    const col=CAT_COLOR[cat]||'#aaa';
+    return `<tr><td><span class="cbadge" style="background:${col}22;color:${col}">${cat}</span></td>
+      <td class="num">${v.count}</td><td class="num">${gbp(v.total)}</td>
+      <td class="num" style="color:${col}">${pct}%</td></tr>`;
+  }).join('');
+
+  mkChart('c-catbar',{
+    type:'bar',
+    data:{labels:sorted.map(c=>c[0]),datasets:[{
+      label:'Total',data:sorted.map(c=>c[1].total),
+      backgroundColor:sorted.map(([c])=>(CAT_COLOR[c]||'#aaa')+'cc'),
+      borderColor:sorted.map(([c])=>CAT_COLOR[c]||'#aaa'),
+      borderWidth:1,borderRadius:4
+    }]},
+    options:{responsive:true,plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:ctx=>` ${gbp(ctx.parsed.y)}`}}},
+      scales:{
+        x:{ticks:{color:tc,font:{size:10},maxRotation:30},grid:{color:gc}},
+        y:{ticks:{color:tc,callback:v=>v>=1e6?'£'+(v/1e6).toFixed(1).replace(/\.0$/,'')+'M':'£'+(v/1000).toFixed(0)+'k'},grid:{color:gc}}
+      }}
+  });
+}
+
+// ── Top items drilldown ────────────────────────────────────────────────────
+const catSel=document.getElementById('cat-filter-sel');
+ALL_CATS.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;catSel.appendChild(o);});
+
+function renderTopItems(){
+  const sel=catSel.value;
+  const its=filtItems();
+  const filtered=(sel?its.filter(i=>i.category===sel):its)
+    .filter(i=>i.total_price!=null).sort((a,b)=>b.total_price-a.total_price).slice(0,40);
+  document.getElementById('top-items-body').innerHTML=filtered.map(it=>{
+    const col=CAT_COLOR[it.category]||'#aaa';
+    const scol=it.supplier_color||'#aaa';
+    const desc=(it.description||it.article||'—').slice(0,55);
+    const catLabel=it.category==='Uncategorised'?'⚠ Needs verification':it.category;
+    return `<tr>
+      <td><span class="cbadge" style="background:${scol}22;color:${scol};font-size:9px">${it.supplier_name}</span></td>
+      <td><span class="cbadge" style="background:${col}22;color:${col};font-size:9px">${catLabel}</span></td>
+      <td>${it.department}</td>
+      <td title="${it.description||''}">${desc}${(it.description||'').length>55?'…':''}</td>
+      <td>${it.article||'—'}</td>
+      <td class="num">${it.quantity!=null?it.quantity:'—'}</td>
+      <td class="num">${it.unit_price!=null?gbp2(it.unit_price):'—'}</td>
+      <td class="num">${gbp2(it.total_price)}</td>
+      <td>${it.invoice_date||'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Department table ───────────────────────────────────────────────────────
+function buildDeptCharts(){
+  const invs=filtInvs();
+  const deptMap={};
+  invs.forEach(i=>{deptMap[i.department]=deptMap[i.department]||{count:0,total:0};
+    deptMap[i.department].count++;deptMap[i.department].total+=(i.total_amount||0);});
+  const sorted=Object.entries(deptMap).sort((a,b)=>b[1].total-a[1].total);
+
+  document.getElementById('dept-table').innerHTML=sorted.map(([dept,v],di)=>`
+    <tr><td style="color:${DEPT_PAL[di]||'#aaa'}">${dept}</td>
+    <td class="num">${v.count}</td><td class="num">${gbp(v.total)}</td></tr>`).join('');
+}
+
+// ── Heatmap matrix ─────────────────────────────────────────────────────────
+function buildMatrix(){
+  const its=filtItems();
+
+  const cdMap={};
+  its.forEach(i=>{if(i.total_price==null)return;
+    const k=i.category+'|||'+i.department;cdMap[k]=(cdMap[k]||0)+i.total_price;});
+
+  // Sort departments and categories by their total item spend (descending)
+  const deptTot={}, catTot={};
+  its.forEach(i=>{if(i.total_price==null)return;
+    deptTot[i.department]=(deptTot[i.department]||0)+i.total_price;
+    catTot[i.category]=(catTot[i.category]||0)+i.total_price;});
+  const deptsSorted=[...new Set(its.map(i=>i.department))].sort((a,b)=>(deptTot[b]||0)-(deptTot[a]||0));
+  const activeCats=[...new Set(its.map(i=>i.category))].filter(c=>
+    deptsSorted.some(d=>cdMap[c+'|||'+d]>0)).sort((a,b)=>(catTot[b]||0)-(catTot[a]||0));
+  const maxVal=Math.max(...Object.values(cdMap));
+  function hc(v){if(!v)return'';const t=Math.min(v/maxVal,1);return`background:rgba(108,124,255,${(0.1+t*0.75).toFixed(2)})`;}
+
+  let html='<thead><tr><th style="text-align:left;font-size:10px;color:var(--muted)">Department</th>';
+  activeCats.forEach(c=>{html+=`<th style="font-size:9px;color:${CAT_COLOR[c]||'#aaa'};writing-mode:vertical-lr;padding:6px 4px;min-width:28px">${c}</th>`;});
+  html+='<th>Total</th></tr></thead><tbody>';
+  deptsSorted.forEach((dep,di)=>{
+    let rowTotal=0,cells='';
+    activeCats.forEach(cat=>{const v=cdMap[cat+'|||'+dep]||0;rowTotal+=v;
+      cells+=`<td style="${hc(v)}" class="${v?'':'zero'}">${v?gbp(v):'—'}</td>`;});
+    html+=`<tr><td style="color:${DEPT_PAL[di]||'#aaa'};font-weight:600;white-space:nowrap">${dep}</td>${cells}<td style="font-weight:700">${gbp(rowTotal)}</td></tr>`;
+  });
+  html+='</tbody>';
+  document.getElementById('matrix-table').innerHTML=html;
+}
+
+// ── Price Tracker ──────────────────────────────────────────────────────────
+let PT_DATA=null, PT_FILTERED=[], PT_PAGE=1, PT_DETAIL_KEY=null;
+let PT_SORT_KEY='appearances', PT_SORT_DIR=-1;
+const PT_PS=50;
+
+function _ptKey(it){
+  const a=(it.article||'').trim();
+  return a ? a : (it.description||'').toLowerCase().trim();
+}
+
+// Descriptions that are financial adjustments, not real SKUs
+const PT_SKIP=/^\s*(discount|total discount|rebate|adjustment|credit|surcharge|handling|freight|carriage|vat|tax|shipping)\s*$/i;
+
+function buildPriceTracker(){
+  const its=filtItems().filter(i=>{
+    if(i.unit_price==null||i.unit_price<=0)return false;
+    const desc=(i.description||'').trim();
+    const art=(i.article||'').trim();
+    if(PT_SKIP.test(desc)||(PT_SKIP.test(art)&&!desc))return false;
+    return true;
+  });
+  const groups={};
+  its.forEach(it=>{
+    const key=_ptKey(it);
+    if(!key)return;
+    const gk=key+'|||'+it.supplier_name;
+    if(!groups[gk]) groups[gk]={
+      item_key:key, article:(it.article||'').trim(),
+      description:it.description||'', category:it.category,
+      supplier:it.supplier_name, supplier_color:it.supplier_color||'#aaa',
+      occurrences:[]
+    };
+    groups[gk].occurrences.push({
+      date:it.invoice_date, invoice:it.invoice_number,
+      supplier_key:it.supplier, invoice_id:it.invoice_id,
+      qty:it.quantity, unit_price:it.unit_price,
+      total_price:it.total_price, department:it.department
+    });
+  });
+  PT_DATA=Object.values(groups).map(g=>{
+    const occ=g.occurrences.sort((a,b)=>(a.date||'')<(b.date||'')?-1:1);
+    const prices=occ.map(o=>o.unit_price);
+    const fp=prices[0], lp=prices[prices.length-1];
+    const drift=fp>0?(lp-fp)/fp*100:0;
+    return{...g,occurrences:occ,appearances:occ.length,
+      first_date:occ[0].date,latest_date:occ[occ.length-1].date,
+      first_price:fp,latest_price:lp,
+      min_price:Math.min(...prices),max_price:Math.max(...prices),drift};
+  });
+  PT_DETAIL_KEY=null;
+  filterPT();
+}
+
+function filterPT(){
+  if(!PT_DATA)return;
+  const q=(document.getElementById('pt-search').value||'').toLowerCase();
+  const sup=document.getElementById('pt-sup-filter').value;
+  const cat=document.getElementById('pt-cat-filter').value;
+  const minApp=parseInt(document.getElementById('pt-min-app').value||'1',10);
+  PT_FILTERED=PT_DATA.filter(g=>{
+    if(g.appearances<minApp)return false;
+    if(sup&&g.supplier!==sup)return false;
+    if(cat&&g.category!==cat)return false;
+    if(q&&!g.item_key.includes(q)&&!g.description.toLowerCase().includes(q))return false;
+    return true;
+  });
+  PT_FILTERED.sort((a,b)=>{
+    const av=a[PT_SORT_KEY],bv=b[PT_SORT_KEY];
+    if(typeof av==='string')return PT_SORT_DIR*av.localeCompare(bv);
+    return PT_SORT_DIR*((av||0)-(bv||0));
+  });
+  PT_PAGE=1;renderPTTable();
+}
+
+function sortPT(key){
+  if(PT_SORT_KEY===key)PT_SORT_DIR*=-1;else{PT_SORT_KEY=key;PT_SORT_DIR=-1;}
+  PT_FILTERED.sort((a,b)=>{
+    const av=a[key],bv=b[key];
+    if(typeof av==='string')return PT_SORT_DIR*av.localeCompare(bv);
+    return PT_SORT_DIR*((av||0)-(bv||0));
+  });
+  renderPTTable();
+}
+
+function renderPTTable(page){
+  if(page!==undefined)PT_PAGE=page;
+  const start=(PT_PAGE-1)*PT_PS;
+  const slice=PT_FILTERED.slice(start,start+PT_PS);
+  let html='';
+  slice.forEach(g=>{
+    const gk=g.item_key+'|||'+g.supplier;
+    const isOpen=PT_DETAIL_KEY===gk;
+    const driftCol=g.appearances<2?'var(--muted)':g.drift>10?'#ff6b6b':g.drift<-10?'#56cf8e':'var(--muted)';
+    const driftTxt=g.appearances<2?'—':(g.drift>0?'+':'')+g.drift.toFixed(1)+'%';
+    const esc=gk.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const descShort=g.description.length>70?g.description.slice(0,70)+'…':g.description;
+    const itemCell=g.article
+      ? `<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.article}</div>
+         <div style="font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${g.description}">${descShort}</div>`
+      : `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${g.description}">${descShort}</div>`;
+    html+=`<tr class="pt-row${isOpen?' pt-open':''}" onclick="togglePTDetail('${esc}')">
+      <td style="max-width:280px;overflow:hidden">${itemCell}</td>
+      <td>${g.category}</td>
+      <td style="color:${g.supplier_color}">${g.supplier}</td>
+      <td class="num">${g.appearances}</td>
+      <td>${g.first_date||'—'}</td>
+      <td>${g.latest_date||'—'}</td>
+      <td class="num">${gbp2(g.first_price)}</td>
+      <td class="num">${gbp2(g.latest_price)}</td>
+      <td class="num" style="color:${driftCol};font-weight:600">${driftTxt}</td>
+    </tr>`;
+    if(isOpen){
+      const rows=g.occurrences.map((o,i)=>{
+        const prev=i>0?g.occurrences[i-1].unit_price:null;
+        const delta=prev!=null?o.unit_price-prev:null;
+        const dc=delta==null?'':delta>0?'#ff6b6b':delta<0?'#56cf8e':'var(--muted)';
+        const ds=delta==null?'—':(delta>0?'+':'')+gbp2(delta);
+        return`<tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:4px 8px">${o.date||'—'}</td>
+          <td style="padding:4px 8px">
+            ${o.invoice?`<a onclick="openThumbByKey('${o.supplier_key}',${o.invoice_id})" style="color:var(--accent);cursor:pointer">${o.invoice}</a>`:'—'}
+          </td>
+          <td style="padding:4px 8px;color:var(--muted)">${o.department||'—'}</td>
+          <td style="text-align:right;padding:4px 8px">${o.qty!=null?o.qty:'—'}</td>
+          <td style="text-align:right;padding:4px 8px;font-weight:600">${gbp2(o.unit_price)}</td>
+          <td style="text-align:right;padding:4px 8px">${o.total_price!=null?gbp2(o.total_price):'—'}</td>
+          <td style="text-align:right;padding:4px 8px;color:${dc};font-weight:600">${ds}</td>
+        </tr>`;
+      }).join('');
+      html+=`<tr class="pt-detail-row"><td colspan="9" style="padding:0;background:var(--bg)">
+        <div style="padding:10px 16px 14px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+            ${g.article?'<strong>Article:</strong> '+g.article+' &nbsp;·&nbsp; ':''}
+            <strong>Description:</strong> ${g.description}
+          </div>
+          <table style="width:100%;font-size:12px;border-collapse:collapse">
+            <thead><tr style="color:var(--muted);border-bottom:1px solid var(--border)">
+              <th style="text-align:left;padding:4px 8px">Date</th>
+              <th style="text-align:left;padding:4px 8px">Invoice #</th>
+              <th style="text-align:left;padding:4px 8px">Department</th>
+              <th style="text-align:right;padding:4px 8px">Qty</th>
+              <th style="text-align:right;padding:4px 8px">Unit £</th>
+              <th style="text-align:right;padding:4px 8px">Total £</th>
+              <th style="text-align:right;padding:4px 8px">Δ vs prev</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </td></tr>`;
+    }
+  });
+  document.getElementById('pt-body').innerHTML=html||
+    '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">No items match the current filters</td></tr>';
+  renderPager('pt-pager',PT_FILTERED.length,PT_PS,PT_PAGE,'renderPTTable');
+}
+
+function togglePTDetail(gk){
+  PT_DETAIL_KEY=PT_DETAIL_KEY===gk?null:gk;
+  renderPTTable();
+}
+
+// ── Rebuild all charts on filter change ────────────────────────────────────
+function rebuildAllCharts(){
+  buildMonthly();buildSankey();buildCatTable();renderTopItems();
+  buildDeptCharts();buildMatrix();
+  buildTreemap();buildMonthlyBySup();buildCatBySup();buildSupCards();
+  if(document.getElementById('page-pricetracker').classList.contains('active')) buildPriceTracker();
+  if(document.getElementById('page-reagents').classList.contains('active')) initReagents();
+}
+
+// ── Invoice thumbnail modal ─────────────────────────────────────────────────
+const _INV_BY_ID = {};
+INVOICES.forEach(function(inv){ _INV_BY_ID[inv.supplier + '_' + inv.id] = inv; });
+
+function _openThumbInv(inv) {
+  if (!inv) return;
+  document.getElementById('thumb-title').textContent =
+    inv.invoice_number ? 'Invoice ' + inv.invoice_number : inv.filename;
+  document.getElementById('thumb-meta').textContent =
+    [inv.invoice_date, inv.supplier_name].filter(Boolean).join(' · ');
+  const pdfLink = document.getElementById('thumb-pdf-link');
+  if (pdfLink) {
+    if (inv.pdf_url) { pdfLink.href = inv.pdf_url; pdfLink.style.display = ''; }
+    else { pdfLink.style.display = 'none'; }
+  }
+  const imgWrap = document.getElementById('thumb-pages');
+  const noImg   = document.getElementById('thumb-noimg');
+  if (inv.thumb && inv.thumb.length) {
+    imgWrap.innerHTML = inv.thumb.map((b64, i) =>
+      `<img src="data:image/jpeg;base64,${b64}" alt="Page ${i+1}" style="max-width:100%;border-radius:6px;border:1px solid var(--border)">`
+    ).join('');
+    imgWrap.style.display = '';
+    noImg.style.display = 'none';
+  } else if (inv.pdf_url) {
+    imgWrap.innerHTML = `<iframe src="${inv.pdf_url}" style="width:100%;height:72vh;min-height:480px;border:none;border-radius:6px"></iframe>`;
+    imgWrap.style.display = '';
+    noImg.style.display = 'none';
+  } else {
+    imgWrap.style.display = 'none';
+    noImg.style.display = '';
+  }
+  const rows = [
+    ['Department', inv.department],
+    ['Sub-dept',   inv.buyer_department],
+    ['Total',      inv.total_amount != null ? '£' + inv.total_amount.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2}) : null],
+    ['Type',       inv.document_type],
+    ['Reference',  inv.your_reference],
+    ['File',       inv.filename],
+  ];
+  document.getElementById('thumb-details').innerHTML =
+    rows.filter(r => r[1]).map(r => `<span><b>${r[0]}:</b> ${r[1]}</span>`).join('');
+  document.getElementById('thumb-overlay').classList.add('open');
+}
+
+function openThumb(id) {
+  // Legacy single-supplier call — supplier stored on inv object
+  const inv = INVOICES.find(function(i){ return i.id === id; });
+  _openThumbInv(inv);
+}
+
+function openThumbByKey(supplier, invoiceId) {
+  const inv = _INV_BY_ID[supplier + '_' + invoiceId];
+  _openThumbInv(inv);
+}
+
+function openTlInvoice(invoiceNum, supplier) {
+  // Lookup by supplier+invoice_number (live dashboard) or fall back to first match
+  let inv = null;
+  if (supplier) {
+    inv = INVOICES.find(function(i){ return i.invoice_number === invoiceNum && i.supplier === supplier; });
+  }
+  if (!inv) {
+    inv = INVOICES.find(function(i){ return i.invoice_number === invoiceNum; });
+  }
+  _openThumbInv(inv);
+}
+
+function closeThumb() {
+  document.getElementById('thumb-overlay').classList.remove('open');
+  document.getElementById('thumb-pages').innerHTML = '';
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeThumb(); });
+
+// ── Invoices table ─────────────────────────────────────────────────────────
+let invFiltered=[...INVOICES], invSort='invoice_date', invDir=-1, invPage=1;
+const INV_PS=30;
+// Default ordering: newest invoice_date first, rows with no date pushed to the end.
+function invDefaultSort(a){a.sort((x,y)=>{const xv=x.invoice_date||'',yv=y.invoice_date||'';if(!xv&&!yv)return 0;if(!xv)return 1;if(!yv)return -1;return yv.localeCompare(xv);});}
+
+function docBadge(t,sc){
+  const m={invoice:'#6c7cff','consolidated invoice':'#4ecdc4','service invoice':'#4ecdc4',
+            'contract invoice':'#ff9f43','credit note':'#ff6b6b'};
+  const c=m[t]||'#aaa';
+  return `<span class="cbadge" style="background:${c}22;color:${c}">${t||'unknown'}</span>`;
+}
+
+function renderInvoices(){
+  const start=(invPage-1)*INV_PS;
+  document.getElementById('inv-body').innerHTML=invFiltered.slice(start,start+INV_PS).map(inv=>{
+    const sc=inv.supplier_color||'#aaa';
+    const sub=inv.subtotal;
+    const da=inv.discount_amount;
+    const dp=(sub&&da&&sub>0)?(da/sub*100).toFixed(1)+'%':'—';
+    const discCol=(da&&da>0)?'color:#ff6b6b':'';
+    return `<tr style="cursor:pointer" onclick="openThumbByKey('${inv.supplier}',${inv.id})" title="Click to preview ${inv.filename}">
+      <td>${inv.invoice_date||'—'}</td>
+      <td><span class="cbadge" style="background:${sc}22;color:${sc};font-size:9px">${inv.supplier_name}</span></td>
+      <td>${inv.invoice_number||'—'}</td>
+      <td>${docBadge(inv.document_type)}</td>
+      <td style="font-weight:600">${inv.department}</td>
+      <td title="${inv.buyer_department||''}">${(inv.buyer_department||'—').slice(0,35)}</td>
+      <td class="num">${sub!=null?gbp2(sub):'—'}</td>
+      <td class="num" style="${discCol}">${da?gbp2(da):'—'}</td>
+      <td class="num" style="${discCol}">${dp}</td>
+      <td class="num" style="font-weight:700">${inv.total_amount!=null?gbp2(inv.total_amount):'—'}</td>
+      <td>${inv.currency||'—'}</td>
+      <td>${inv.extraction_error?'<span class="err">⚠ Error</span>':inv.validation_warning?'<span class="warn">⚠ Warn</span>':'<span class="ok">✓</span>'}</td>
+      <td title="${inv.filename}">${inv.filename}</td>
+    </tr>`;
+  }).join('');
+  renderPager('inv-pager',invFiltered.length,INV_PS,invPage,'goInv');
+}
+
+function goInv(p){invPage=p;renderInvoices();}
+
+function filterInvoices(){
+  const q=document.getElementById('inv-search').value.toLowerCase();
+  const sup=document.getElementById('inv-sup').value;
+  const dept=document.getElementById('inv-dept').value;
+  const type=document.getElementById('inv-type').value;
+  invFiltered=INVOICES.filter(inv=>{
+    if(q&&!`${inv.invoice_number||''} ${inv.filename||''} ${inv.your_reference||''}`.toLowerCase().includes(q))return false;
+    if(sup&&inv.supplier_name!==sup)return false;
+    if(dept&&inv.department!==dept)return false;
+    if(type&&inv.document_type!==type)return false;
+    return true;
+  });
+  invDefaultSort(invFiltered);
+  invPage=1;renderInvoices();
+}
+
+function sortInv(key){
+  if(invSort===key)invDir*=-1;else{invSort=key;invDir=1;}
+  invFiltered.sort((a,b)=>{const av=a[key],bv=b[key];if(av==null&&bv==null)return 0;if(av==null)return 1;if(bv==null)return-1;return av<bv?-invDir:av>bv?invDir:0;});
+  renderInvoices();
+}
+
+// ── Line items table ────────────────────────────────────────────────────────
+let liFiltered=[...ITEMS], liSort='total_price', liDir=-1, liPage=1;
+const LI_PS=30;
+const liCatSel=document.getElementById('li-cat');
+const liDeptSel=document.getElementById('li-dept');
+ALL_CATS.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;liCatSel.appendChild(o);});
+[...new Set(ITEMS.map(i=>i.department))].sort().forEach(d=>{
+  const o=document.createElement('option');o.value=d;o.textContent=d;liDeptSel.appendChild(o);
+});
+
+function renderItems(){
+  const start=(liPage-1)*LI_PS;
+  document.getElementById('li-body').innerHTML=liFiltered.slice(start,start+LI_PS).map(it=>{
+    const col=CAT_COLOR[it.category]||'#aaa';
+    const sc=it.supplier_color||'#aaa';
+    const desc=it.description||it.article||'—';
+    const needsVerif = it.category==='Uncategorised';
+    const catLabel = needsVerif ? '⚠ Needs verification' : it.category;
+    return `<tr${needsVerif?' style="background:#ff9f430d"':''}>
+      <td>${it.invoice_date||'—'}</td>
+      <td><span class="cbadge" style="background:${sc}22;color:${sc};font-size:9px">${it.supplier_name}</span></td>
+      <td><span class="cbadge" style="background:${col}22;color:${col};font-size:9px">${catLabel}</span></td>
+      <td>${it.department}</td>
+      <td title="${desc}">${desc.slice(0,50)}${desc.length>50?'…':''}</td>
+      <td>${it.article||'—'}</td>
+      <td class="num">${it.quantity!=null?it.quantity:'—'}</td>
+      <td class="num">${it.unit_price!=null?gbp2(it.unit_price):'—'}</td>
+      <td class="num">${it.total_price!=null?gbp2(it.total_price):'—'}</td>
+      <td>${it.invoice_number ? `<a onclick="openThumbByKey('${it.supplier}',${it.invoice_id})" style="color:var(--accent);text-decoration:none;cursor:pointer">${it.invoice_number}</a>` : '—'}</td>
+      <td style="color:var(--muted);font-size:11px;max-width:280px;white-space:normal">${it.comment||''}</td>
+    </tr>`;
+  }).join('');
+  renderPager('li-pager',liFiltered.length,LI_PS,liPage,'goLi');
+  const filtTotal=liFiltered.reduce((s,it)=>s+(it.total_price||0),0);
+  document.getElementById('li-foot').innerHTML=
+    `<tr style="font-weight:700;border-top:2px solid var(--border)">
+      <td colspan="8" style="text-align:right;padding-right:8px">${liFiltered.length} items</td>
+      <td class="num">${gbp2(filtTotal)}</td>
+      <td colspan="2"></td>
+    </tr>`;
+}
+
+function goLi(p){liPage=p;renderItems();}
+
+function filterItems(){
+  const q=document.getElementById('li-search').value.toLowerCase();
+  const sup=document.getElementById('li-sup').value;
+  const cat=liCatSel.value;
+  const dept=liDeptSel.value;
+  liFiltered=ITEMS.filter(it=>{
+    if(q&&!`${it.description||''} ${it.article||''}`.toLowerCase().includes(q))return false;
+    if(sup&&it.supplier_name!==sup)return false;
+    if(cat&&it.category!==cat)return false;
+    if(dept&&it.department!==dept)return false;
+    return true;
+  });
+  liPage=1;renderItems();
+}
+
+function sortItems(key){
+  if(liSort===key)liDir*=-1;else{liSort=key;liDir=1;}
+  liFiltered.sort((a,b)=>{const av=a[key],bv=b[key];if(av==null&&bv==null)return 0;if(av==null)return 1;if(bv==null)return-1;return av<bv?-liDir:av>bv?liDir:0;});
+  renderItems();
+}
+
+// ── Populate supplier filter selects ────────────────────────────────────────
+if(gsup) SUP_NAMES.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;gsup.appendChild(o);});
+['inv-sup','li-sup','pt-sup-filter'].forEach(id=>{
+  const el=document.getElementById(id);
+  SUP_NAMES.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;el.appendChild(o);});
+});
+// Populate PT category filter
+const ptCatSel=document.getElementById('pt-cat-filter');
+ALL_CATS.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;ptCatSel.appendChild(o);});
+
+updateKPIs();
+
+// Supplier cards
+function buildSupCards(){
+  const sups=G_SUP?SUP_TOTALS.filter(s=>s.display===G_SUP):SUP_TOTALS;
+  const html=sups.map(s=>{
+    const invs=filtInvs().filter(i=>i.supplier_name===s.display);
+    const its=filtItems().filter(i=>i.supplier_name===s.display);
+    const catMap={};
+    its.forEach(i=>{if(i.total_price!=null)catMap[i.category]=(catMap[i.category]||0)+i.total_price;});
+    const topCat=Object.entries(catMap).sort((a,b)=>b[1]-a[1])[0];
+    const total=invs.reduce((s,i)=>s+(i.total_amount||0),0);
+    return `<div class="sup-card" style="--sc:${s.color}">
+    <div class="sname" style="color:${s.color}">${s.display}</div>
+    <div class="srow"><span>Invoices</span><span class="sv">${invs.length}</span></div>
+    <div class="srow"><span>Total spend</span><span class="sv">${gbp(total)}</span></div>
+    <div class="srow"><span>Line items</span><span class="sv">${its.length}</span></div>
+    ${topCat?`<div class="srow"><span>Top category</span><span class="sv" style="font-size:10px">${topCat[0]}</span></div>`:''}
+  </div>`;
+  }).join('');
+  document.getElementById('sup-cards').innerHTML=html;
+}
+buildSupCards();
+
+buildMonthly();
+buildSankey();
+buildCatTable();
+
+renderTopItems();
+
+buildDeptCharts();
+buildMatrix();
+
+// Invoices table setup
+const invDeptSel=document.getElementById('inv-dept');
+[...new Set(INVOICES.map(i=>i.department))].sort().forEach(d=>{
+  const o=document.createElement('option');o.value=d;o.textContent=d;invDeptSel.appendChild(o);
+});
+invDefaultSort(invFiltered);
+renderInvoices();
+
+// Line items table setup
+liFiltered.sort((a,b)=>(b.total_price||0)-(a.total_price||0));
+renderItems();
+
+// ── Service Contracts Intelligence ─────────────────────────────────────────
+function renderSvcSection(){
+  if(!SVC || !SVC.items || !SVC.items.length) return;
+
+  const TIER_PAL = {'Protect Premium':'#6c7cff','Protect Advanced':'#4ecdc4',
+                     'Protect Preventive':'#ffe66d','SMA (Software)':'#c77dff',
+                     'PremiumPlus':'#c0392b','PremiumCare':'#e67e22',
+                     'AdvancedCare':'#f39c12','StandardCare':'#27ae60',
+                     'Bronze':'#7f8c8d','Silver':'#95a5a6','Silver/Bronze':'#8d9ea6','Gold':'#f1c40f',
+                     'Signature Plus':'#e74c3c','Platinum':'#9b59b6',
+                     'Assure':'#3498db','Maintain':'#1abc9c',
+                     'Call-Out':'#e67e22','Installation':'#95a5a6',
+                     'Labour & Repairs':'#d35400',
+                     'Gold Warranty':'#f39c12','Extended Warranty':'#2ecc71',
+                     'AB Assurance':'#16a085','ORINT':'#8e44ad',
+                     'Service Agreement':'#bdc3c7'};
+
+  // KPIs
+  const totalLines = SVC.items.length;
+  const totalValue = SVC.items.reduce((s,i)=>s+i.total,0);
+  const nProducts  = SVC.products.length;
+  const nVariances = SVC.products.filter(p=>p.has_variance).length;
+  const discRates  = SVC.dept_disc.filter(d=>d.disc_pct>0).map(d=>d.disc_pct);
+  const minDisc    = discRates.length ? Math.min(...discRates) : 0;
+  const maxDisc    = discRates.length ? Math.max(...discRates) : 0;
+
+  document.getElementById('svc-kpi-lines').textContent    = totalLines;
+  document.getElementById('svc-kpi-value').textContent    = gbp(totalValue);
+  document.getElementById('svc-kpi-products').textContent = nProducts;
+  document.getElementById('svc-kpi-variances').textContent= nVariances;
+  document.getElementById('svc-kpi-var-sub').textContent  = nVariances>0 ? nVariances+' products with dept price gaps' : 'all pricing consistent';
+  document.getElementById('svc-kpi-disc').textContent     = minDisc===maxDisc ? minDisc+'%' : minDisc+'–'+maxDisc+'%';
+
+  // Tier donut — multi-supplier: one slice per "Supplier · Tier" coloured by supplier brand
+  const TIER_ORDER=Object.keys(TIER_PAL);
+  const _isMultiSup = !G_SUP && Object.keys(SVC_BY_SUP).length > 1;
+  const _supColorMap = {};
+  SUP_NAMES.forEach((n,i)=>{ _supColorMap[n]=SUP_COLORS[i]; });
+
+  if(_isMultiSup){
+    document.getElementById('svc-tier-heading').textContent='Active Maintenance Plans by Supplier';
+    const pieEntries=Object.entries(SVC_BY_SUP).map(([supName,svcd])=>({
+      label:supName,
+      count:(svcd.timeline||[]).filter(t=>t.status==='active').length,
+      color:_supColorMap[supName]||'#888',
+    })).filter(e=>e.count>0).sort((a,b)=>b.count-a.count);
+    mkChart('c-svc-tier',{
+      type:'doughnut',
+      data:{
+        labels:pieEntries.map(e=>e.label),
+        datasets:[{data:pieEntries.map(e=>e.count),
+          backgroundColor:pieEntries.map(e=>e.color+'cc'),
+          borderColor:pieEntries.map(e=>e.color),borderWidth:2}]
+      },
+      options:{cutout:'55%',responsive:true,plugins:{
+        legend:{position:'right',labels:{color:tc,font:{size:11},boxWidth:14,padding:12,
+          generateLabels:function(chart){
+            const ds=chart.data.datasets[0];
+            return chart.data.labels.map((l,i)=>({
+              text:pieEntries[i].label+'  ('+ds.data[i]+' active)',
+              fillStyle:ds.backgroundColor[i],strokeStyle:ds.borderColor[i],lineWidth:2,fontColor:'#e0e0e0',index:i
+            }));
+          }
+        }},
+        tooltip:{callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed} active plans`}}
+      }}
+    });
+  } else {
+    document.getElementById('svc-tier-heading').textContent='Spend by Service Tier';
+    const activeTiers=TIER_ORDER.filter(t=>SVC.tier_totals.some(x=>x.tier===t));
+    const tierData=activeTiers.map(t=>{const f=SVC.tier_totals.find(x=>x.tier===t);return f?f.total:0;});
+    const tierCounts=activeTiers.map(t=>{const f=SVC.tier_totals.find(x=>x.tier===t);return f?f.count:0;});
+    mkChart('c-svc-tier',{
+      type:'doughnut',
+      data:{
+        labels:activeTiers,
+        datasets:[{data:tierData,
+          backgroundColor:activeTiers.map(t=>TIER_PAL[t]+'cc'),
+          borderColor:activeTiers.map(t=>TIER_PAL[t]),borderWidth:2}]
+      },
+      options:{cutout:'55%',responsive:true,plugins:{
+        legend:{position:'right',labels:{color:tc,font:{size:11},boxWidth:14,padding:12,
+          generateLabels:function(chart){
+            const ds=chart.data.datasets[0];
+            return chart.data.labels.map((l,i)=>({
+              text:l+'  '+gbp(ds.data[i])+'  ('+tierCounts[i]+' lines)',
+              fillStyle:ds.backgroundColor[i],strokeStyle:ds.borderColor[i],lineWidth:2,fontColor:'#e0e0e0',index:i
+            }));
+          }
+        }},
+        tooltip:{callbacks:{label:ctx=>` ${ctx.label}: ${gbp(ctx.parsed)}`}}
+      }}
+    });
+  }
+
+  // Discount / spend chart — multi-supplier: per-supplier bars; single-supplier: dept breakdown
+  if(_isMultiSup){
+    document.getElementById('svc-disc-heading').textContent='Service Spend by Supplier';
+    const supEntries=Object.entries(SVC_BY_SUP).map(([supName,svcd])=>{
+      const totalSpend=(svcd.tier_totals||[]).reduce((s,t)=>s+(t.total||0),0);
+      const dr=(svcd.dept_disc||[]).filter(d=>d.disc_pct>0).map(d=>d.disc_pct);
+      const avgDisc=dr.length?Math.round(dr.reduce((a,b)=>a+b,0)/dr.length*10)/10:0;
+      return {sup:supName,total:totalSpend,disc_pct:avgDisc,color:_supColorMap[supName]||'#6c7cff'};
+    }).filter(e=>e.total>0).sort((a,b)=>b.total-a.total);
+    const hasSupDiscs=supEntries.some(e=>e.disc_pct>0);
+    const supDiscMax=hasSupDiscs?Math.ceil(Math.max(...supEntries.map(e=>e.disc_pct))*1.15/5)*5:30;
+    const supDs=[{label:'Service Spend (£)',data:supEntries.map(e=>e.total),
+      backgroundColor:supEntries.map(e=>e.color+'55'),borderColor:supEntries.map(e=>e.color),
+      borderWidth:1,borderRadius:3,yAxisID:'y'}];
+    if(hasSupDiscs) supDs.push({label:'Avg Discount %',data:supEntries.map(e=>e.disc_pct),type:'line',
+      borderColor:'#ff6b6b',backgroundColor:'#ff6b6b',pointRadius:5,pointBackgroundColor:'#ff6b6b',
+      tension:0.3,yAxisID:'y1'});
+    mkChart('c-svc-disc',{
+      type:'bar',
+      data:{labels:supEntries.map(e=>e.sup),datasets:supDs},
+      options:{responsive:true,plugins:{
+        legend:{labels:{color:tc,font:{size:10},boxWidth:12}},
+        tooltip:{callbacks:{label:ctx=>ctx.dataset.label.includes('%')
+          ? ` ${ctx.dataset.label}: ${ctx.parsed.y}%`
+          : ` ${ctx.dataset.label}: ${gbp(ctx.parsed.y)}`}}
+      },scales:{
+        x:{ticks:{color:tc,font:{size:10}},grid:{color:gc}},
+        y:{position:'left',ticks:{color:tc,callback:v=>v>=1e6?'£'+(v/1e6).toFixed(1).replace(/\.0$/,'')+'M':'£'+(v/1000).toFixed(0)+'k'},grid:{color:gc}},
+        ...(hasSupDiscs&&{y1:{position:'right',min:0,max:supDiscMax,ticks:{color:'#ff6b6b',callback:v=>v+'%'},grid:{display:false}}})
+      }}
+    });
+  } else {
+    document.getElementById('svc-disc-heading').textContent='Discount % by Department';
+    const depts=SVC.dept_disc.filter(d=>d.total>500).slice(0,15);
+    const deptDiscMax=SVC.has_discounts?Math.ceil(Math.max(...depts.map(d=>d.disc_pct))*1.15/5)*5:30;
+    const discDs=[{label:'Gross Spend (£)',data:depts.map(d=>d.total),
+      backgroundColor:'#6c7cff55',borderColor:'#6c7cff',borderWidth:1,borderRadius:3,yAxisID:'y'}];
+    if(SVC.has_discounts) discDs.push({label:'Discount %',data:depts.map(d=>d.disc_pct),type:'line',
+      borderColor:'#ff6b6b',backgroundColor:'#ff6b6b',pointRadius:5,pointBackgroundColor:'#ff6b6b',
+      tension:0.3,yAxisID:'y1'});
+    mkChart('c-svc-disc',{
+      type:'bar',
+      data:{labels:depts.map(d=>d.dept),datasets:discDs},
+      options:{responsive:true,plugins:{
+        legend:{labels:{color:tc,font:{size:10},boxWidth:12}},
+        tooltip:{callbacks:{label:ctx=>ctx.dataset.label.includes('%')
+          ? ` ${ctx.dataset.label}: ${ctx.parsed.y}%`
+          : ` ${ctx.dataset.label}: ${gbp(ctx.parsed.y)}`}}
+      },scales:{
+        x:{ticks:{color:tc,font:{size:9},maxRotation:35},grid:{color:gc}},
+        y:{position:'left',ticks:{color:tc,callback:v=>v>=1e6?'£'+(v/1e6).toFixed(1).replace(/\.0$/,'')+'M':'£'+(v/1000).toFixed(0)+'k'},grid:{color:gc}},
+        ...(SVC.has_discounts&&{y1:{position:'right',min:0,max:deptDiscMax,ticks:{color:'#ff6b6b',callback:v=>v+'%'},grid:{display:false}}})
+      }}
+    });
+  }
+
+  // Tier × Dept stacked bar
+  const tdDepts = [...new Set(SVC.tier_dept.map(d=>d.dept))];
+  const tdTotals = {};
+  SVC.tier_dept.forEach(d=>tdTotals[d.dept]=(tdTotals[d.dept]||0)+d.total);
+  const tdSorted = tdDepts.sort((a,b)=>(tdTotals[b]||0)-(tdTotals[a]||0)).slice(0,12);
+  const tdTiers  = TIER_ORDER.filter(t=>SVC.tier_dept.some(d=>d.tier===t));
+  const tdDatasets = tdTiers.map(tier=>{
+    const col = TIER_PAL[tier]||'#aaa';
+    return {label:tier,
+             data:tdSorted.map(dept=>{
+               const f=SVC.tier_dept.find(d=>d.tier===tier&&d.dept===dept);
+               return f?f.total:0;
+             }),
+             backgroundColor:col+'cc',borderColor:col,borderWidth:1,stack:'s',borderRadius:2};
+  }).filter(ds=>ds.data.some(v=>v>0));
+  mkChart('c-svc-tierdept',{
+    type:'bar',data:{labels:tdSorted,datasets:tdDatasets},
+    options:{responsive:true,plugins:{
+      legend:{labels:{color:tc,font:{size:10},boxWidth:12}},
+      tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${gbp(ctx.parsed.y)}`}}
+    },scales:{
+      x:{stacked:true,ticks:{color:tc,font:{size:9},maxRotation:30},grid:{color:gc}},
+      y:{stacked:true,ticks:{color:tc,callback:v=>v>=1e6?'£'+(v/1e6).toFixed(1).replace(/\.0$/,'')+'M':'£'+(v/1000).toFixed(0)+'k'},grid:{color:gc}}
+    }}
+  });
+
+  // Price variance table
+  const varProds = SVC.products.filter(p=>p.has_variance||p.has_net_variance);
+  document.getElementById('svc-var-body').innerHTML = varProds.sort((a,b)=>{
+    const aN=a.net_prices||a.prices, bN=b.net_prices||b.prices;
+    return (Math.max(...bN)-Math.min(...bN))-(Math.max(...aN)-Math.min(...aN));
+  }).map(p=>{
+    const lo=Math.min(...p.prices.filter(x=>x>0));
+    const hi=Math.max(...p.prices);
+    const netLo=p.net_prices?Math.min(...p.net_prices.filter(x=>x>0)):lo;
+    const netHi=p.net_prices?Math.max(...p.net_prices):hi;
+    const netDelta=netHi-netLo;
+    const col=TIER_PAL[p.tier]||'#aaa';
+    const deptInfo=p.dept_nets?Object.entries(p.dept_nets).map(([d,v])=>
+      d.slice(0,20)+(v.disc?' ('+v.disc+'%)':'')).join(', ')
+      :p.depts.join(', ');
+    return `<tr>
+      <td style="font-family:monospace;font-size:11px;color:var(--muted)">${p.article}</td>
+      <td>${p.desc}</td>
+      <td><span class="cbadge" style="background:${col}22;color:${col}">${p.tier}</span></td>
+      <td class="num">${gbp2(lo)}</td>
+      <td class="num">${gbp2(hi)}</td>
+      <td class="num" style="color:#56cf8e">${gbp2(netLo)}</td>
+      <td class="num" style="color:#ff6b6b">${gbp2(netHi)}</td>
+      <td class="num" style="color:#ff6b6b;font-weight:700">${gbp2(netDelta)}</td>
+      <td style="font-size:10px;color:var(--muted)">${deptInfo}</td>
+    </tr>`;
+  }).join('');
+
+  // Product catalogue
+  const tierSel = document.getElementById('svc-tier-filter');
+  [...new Set(SVC.products.map(p=>p.tier))].sort().forEach(t=>{
+    const o=document.createElement('option');o.value=t;o.textContent=t;tierSel.appendChild(o);
+  });
+
+  let svcProds=[...SVC.products], svcSort='total', svcDir=-1, svcPage=1;
+  const SVC_PS=30;
+
+  window.renderSvcProducts=function(){
+    const tierF=tierSel.value;
+    const varF=document.getElementById('svc-var-filter').value;
+    let filtered=SVC.products.filter(p=>{
+      if(tierF&&p.tier!==tierF)return false;
+      if(varF==='var'&&!p.has_variance)return false;
+      return true;
+    });
+    if(svcSort==='price'){
+      filtered.sort((a,b)=>svcDir*(Math.max(...a.prices)-Math.max(...b.prices)));
+    }else if(svcSort==='total'){
+      filtered.sort((a,b)=>svcDir*(a.total-b.total));
+    }else{
+      filtered.sort((a,b)=>{const av=a[svcSort]||'',bv=b[svcSort]||'';return av<bv?-svcDir:av>bv?svcDir:0;});
+    }
+    svcProds=filtered;
+    const start=(svcPage-1)*SVC_PS;
+    const page=filtered.slice(start,start+SVC_PS);
+    document.getElementById('svc-prod-body').innerHTML=page.map(p=>{
+      const col=TIER_PAL[p.tier]||'#aaa';
+      const priceStr=p.prices.map(pr=>'£'+pr.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})).join(', ');
+      const netStr=p.net_prices?p.net_prices.map(pr=>'£'+pr.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})).join(', '):priceStr;
+      const status=p.has_variance
+        ? '<span style="color:#ff6b6b;font-weight:700">⚠ LIST VARIES</span>'
+        : p.has_net_variance
+        ? '<span style="color:#ff9f43;font-weight:700">⚠ NET VARIES</span>'
+        : '<span style="color:#56cf8e">✓ Consistent</span>';
+      const deptInfo=p.dept_nets?p.depts.slice(0,3).map(d=>{
+        const dn=p.dept_nets[d];
+        return d.slice(0,18)+(dn&&dn.disc?' ('+dn.disc+'%)':'');
+      }).join(', ')+(p.depts.length>3?' +':'')
+        :p.depts.slice(0,3).join(', ')+(p.depts.length>3?' +':'');
+      return `<tr>
+        <td style="font-family:monospace;font-size:11px;color:var(--muted)">${p.article}</td>
+        <td title="${p.desc}">${p.desc}</td>
+        <td><span class="cbadge" style="background:${col}22;color:${col}">${p.tier}</span></td>
+        <td class="num" style="${p.has_variance?'color:#ff6b6b;font-weight:600':''}">${priceStr}</td>
+        <td class="num" style="${p.has_net_variance?'color:#ff9f43;font-weight:600':'color:#56cf8e'}">${netStr}</td>
+        <td class="num">${gbp(p.total)}</td>
+        <td style="font-size:10px;color:var(--muted)">${deptInfo}</td>
+        <td>${status}</td>
+      </tr>`;
+    }).join('');
+    renderPager('svc-prod-pager',filtered.length,SVC_PS,svcPage,'goSvcProd');
+  };
+  window.goSvcProd=function(p){svcPage=p;renderSvcProducts();};
+  window.sortSvcProd=function(key){
+    if(svcSort===key)svcDir*=-1;else{svcSort=key;svcDir=-1;}
+    svcPage=1;renderSvcProducts();
+  };
+  renderSvcProducts();
+
+  // ── Contract Timeline ─────────────────────────────────────────────────
+  (function(){
+    const tl = SVC.timeline;
+    if(!tl || !tl.length) return;
+    document.getElementById('svc-timeline-card').style.display = '';
+
+    // Populate supplier selector once (only shown in multi-supplier mode)
+    const tlSupSel = document.getElementById('tl-sup');
+    const tlSupNames = Object.keys(SVC_BY_SUP);
+    if(tlSupNames.length > 1 && tlSupSel.options.length === 1){
+      tlSupNames.forEach(name=>{
+        const o=document.createElement('option');o.value=name;o.textContent=name;
+        tlSupSel.appendChild(o);
+      });
+      tlSupSel.style.display='';
+    }
+
+    function effectiveTl(){
+      const v=tlSupSel?tlSupSel.value:'';
+      return (v && SVC_BY_SUP[v] && SVC_BY_SUP[v].timeline) ? SVC_BY_SUP[v].timeline : tl;
+    }
+
+    const dateMin = new Date(SVC.tl_date_min);
+    const dateMax = new Date(SVC.tl_date_max);
+    const totalMs = dateMax - dateMin || 1;
+
+    // Status config
+    const STATUS_CFG = {
+      active:           {label:'🟢 Active',              color:'#56cf8e', bg:'#56cf8e22'},
+      expired_renewed:  {label:'🟡 Expired — renewed',   color:'#f7b731', bg:'#f7b73122'},
+      expired_lapsed:   {label:'🔴 Needs renewal',       color:'#ff6b6b', bg:'#ff6b6b22'},
+      future:           {label:'🔵 Future',              color:'#74b9ff', bg:'#74b9ff22'},
+    };
+
+    function renderKPIs(data){
+      const nActive  = data.filter(c=>c.status==='active').length;
+      const nLapsed  = data.filter(c=>c.status==='expired_lapsed').length;
+      const nRenewed = data.filter(c=>c.status==='expired_renewed').length;
+      const nFuture  = data.filter(c=>c.status==='future').length;
+      document.getElementById('tl-renewal-kpis').innerHTML = [
+        [nActive,  '🟢 Active',            '#56cf8e'],
+        [nLapsed,  '🔴 Needs renewal',      '#ff6b6b'],
+        [nRenewed, '🟡 Expired — renewed', '#f7b731'],
+        [nFuture,  '🔵 Future',            '#74b9ff'],
+      ].map(([n,label,col])=>
+        `<div style="background:${col}22;border:1px solid ${col}44;border-radius:8px;padding:8px 16px;display:flex;flex-direction:column;gap:2px">
+          <span style="font-size:20px;font-weight:700;color:${col}">${n}</span>
+          <span style="color:var(--muted)">${label}</span>
+        </div>`
+      ).join('');
+    }
+    renderKPIs(tl);
+
+    // Dept colour palette — built after tlDepts is available (see below)
+    const DEPT_COLORS=['#6c7cff','#4ecdc4','#ff9f43','#ff6b6b','#56cf8e','#c77dff',
+                       '#f7b731','#fd79a8','#74b9ff','#00cec9','#e17055','#a29bfe',
+                       '#55efc4','#fdcb6e','#fab1a0','#81ecec','#dfe6e9','#b2bec3'];
+    const deptColorMap={}; // filled after tlDepts defined below
+
+    function durationLabel(start, end){
+      const s=new Date(start), e=new Date(end);
+      const days=Math.round((e-s)/86400000);
+      if(days>=365) return Math.round(days/30.4)+' mo';
+      return days+' d';
+    }
+
+    // Populate dept + tier dropdowns
+    const tlDepts = [...new Set(tl.map(c=>c.dept))].sort();
+    const tlTiers = [...new Set(tl.map(c=>c.tier).filter(t=>t&&t!=='—'))].sort();
+    tlDepts.forEach((d,i)=>deptColorMap[d]=DEPT_COLORS[i%DEPT_COLORS.length]);
+    const tlDeptSel=document.getElementById('tlf-dept');
+    const tlTierSel=document.getElementById('tlf-tier');
+    tlDepts.forEach(d=>{const o=document.createElement('option');o.value=d;o.textContent=d;tlDeptSel.appendChild(o);});
+    tlTiers.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;tlTierSel.appendChild(o);});
+
+    const LABEL_W = 240;
+    const MONTHS  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    function renderGantt(data){
+      const gantt = document.getElementById('tl-gantt');
+      const today = new Date();
+
+      // Group by serial — entries without serial get individual rows
+      const rowMap = new Map();
+      data.forEach((c,i)=>{
+        const key = c.serial!=='—' ? c.serial : `__${i}`;
+        if(!rowMap.has(key)){
+          rowMap.set(key, {
+            instr:  c.instrument!=='—' ? c.instrument : (c.serial!=='—' ? '' : c.dept),
+            serial: c.serial,
+            dept:   c.dept,
+            entries:[]
+          });
+        }
+        rowMap.get(key).entries.push(c);
+      });
+
+      // Month axis header — skip months to avoid overlap based on span length
+      const spanMonths=Math.round(totalMs/(1000*60*60*24*30));
+      const monthStep=spanMonths>36?6:spanMonths>18?3:spanMonths>10?2:1;
+      let header=`<div style="position:relative;height:22px;margin-bottom:4px">
+        <div style="display:inline-block;width:${LABEL_W}px"></div>`;
+      let d=new Date(dateMin); d.setDate(1);
+      let mIdx=0;
+      // _barLeft(pct): converts a timeline % to a CSS left value that aligns with
+      // bars in the flex:1 bar area. Bars use left:X% relative to (gantt - LABEL_W);
+      // absolutely-positioned overlays sit in the full gantt, so:
+      //   correct_pos = LABEL_W + pct/100 * (gantt - LABEL_W)
+      //               = pct% + LABEL_W*(100-pct)/100 px
+      function _barLeft(pct){
+        return `calc(${pct}% + ${(LABEL_W*(100-pct)/100).toFixed(1)}px)`;
+      }
+
+      while(d<=dateMax){
+        const left=((d-dateMin)/totalMs*100).toFixed(2);
+        if(mIdx%monthStep===0)
+          header+=`<div style="position:absolute;left:${_barLeft(left)};font-size:10px;color:var(--muted);white-space:nowrap">${MONTHS[d.getMonth()]} ${d.getFullYear()}</div>`;
+        d=new Date(d.getFullYear(),d.getMonth()+1,1);
+        mIdx++;
+        if(d-dateMin>totalMs*1.05) break;
+      }
+      header+='</div>';
+
+      // Today line — use _barLeft so it aligns with bar positions
+      const todayPct=((today-dateMin)/totalMs*100).toFixed(2);
+      const todayLine=(today>=dateMin&&today<=dateMax)
+        ?`<div style="position:absolute;left:${_barLeft(todayPct)};top:0;bottom:0;width:2px;background:#ff6b6b88;pointer-events:none;z-index:2">
+           <span style="position:absolute;top:0;left:3px;font-size:9px;color:#ff6b6b;white-space:nowrap">today</span></div>`:'';
+
+      let rows='';
+      rowMap.forEach((row)=>{
+        // Sort entries by start date
+        row.entries.sort((a,b)=>(a.start||'').localeCompare(b.start||''));
+        let bars='';
+        row.entries.forEach(c=>{
+          if(!c.start||!c.end) return;
+          const s=new Date(c.start), e=new Date(c.end);
+          const left=((s-dateMin)/totalMs*100).toFixed(2);
+          const width=Math.max(((e-s)/totalMs*100),0.3).toFixed(2);
+          const sc=STATUS_CFG[c.status]||{color:'#aaa',label:c.status};
+          const tierLabel=c.tier!=='—'?c.tier:'';
+          const inferTag=c.inferred?' (dates inferred)':'';
+          const tip=`${row.instr}${row.serial!=='—'?' · S/N '+row.serial:''}\n${c.dept}\n${tierLabel?tierLabel+'\n':''}${c.start} → ${c.end}${inferTag}\n${gbp(c.total)}\n${sc.label}`;
+          const barClick=`openTlInvoice('${(c.invoice||'').replace(/'/g,"\\'")}','${(c.supplier||'').replace(/'/g,"\\'")}')`;
+          const infSty=c.inferred?'border-style:dashed;opacity:0.7':'';
+          bars+=`<div onclick="${barClick}" style="position:absolute;left:${left}%;width:${width}%;background:${sc.color}bb;border:1px solid ${sc.color};border-radius:3px;height:100%;min-width:4px;cursor:pointer;${infSty}" title="${tip}">
+            <span style="font-size:9px;color:#fff;padding:0 4px;white-space:nowrap;overflow:hidden;display:block;line-height:18px;text-shadow:0 0 3px #000;pointer-events:none">${tierLabel}</span>
+          </div>`;
+        });
+
+        const deptCol=deptColorMap[row.dept]||'#6c7cff';
+        rows+=`<div style="display:flex;align-items:center;height:42px;margin-bottom:4px;border-bottom:1px solid var(--border)22">
+          <div style="width:${LABEL_W}px;flex-shrink:0;padding-right:10px;overflow:hidden;cursor:default">
+            <div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${row.instr}">${row.instr||row.dept}</div>
+            <div style="font-size:10px;color:var(--muted);white-space:nowrap;margin-top:2px">
+              ${row.serial!=='—'?`<span style="font-family:monospace">S/N ${row.serial}</span> · `:'' }
+              <span style="color:${deptCol}">${row.dept}</span>
+            </div>
+          </div>
+          <div style="flex:1;position:relative;height:24px">${bars}</div>
+        </div>`;
+      });
+
+      gantt.innerHTML = header+`<div style="position:relative">`+todayLine+rows+`</div>`;
+    }
+
+    function renderTable(data){
+      let html='';
+      const seenChains=new Set();
+      data.forEach((c,i)=>{
+        const deptCol=deptColorMap[c.dept]||'#6c7cff';
+        const tierCol=TIER_PAL[c.tier]||'#aaa';
+        const sc=STATUS_CFG[c.status]||{label:c.status,color:'#aaa',bg:'#aaa22'};
+        const invLink=`<a onclick="openTlInvoice('${(c.invoice||'').replace(/'/g,"\\'")}','${(c.supplier||'').replace(/'/g,"\\'")}')" style="color:var(--accent);cursor:pointer;font-family:monospace;font-size:11px">${c.invoice||'—'}</a>`;
+        let chainRow='';
+        if(c.chain_id&&c.chain_pos>1&&seenChains.has(c.chain_id)){
+          const gap=c.gap_days;
+          const gl=gap==null?'':gap<=1?'↑ renewed seamlessly':gap<0?`↑ ${Math.abs(gap)}d overlap`:`↑ ${gap}d gap`;
+          const gc=gap==null?'#aaa':gap<=1?'#56cf8e':gap<0?'#ff9f43':'#ff6b6b';
+          chainRow=`<tr><td colspan="10" style="text-align:center;padding:1px 0;font-size:10px;color:${gc};border:none">${gl}</td></tr>`;
+        }
+        if(c.chain_id) seenChains.add(c.chain_id);
+        const infMark=c.inferred?' title="Dates inferred from invoice date" style="font-family:monospace;font-size:11px;font-style:italic;color:var(--muted)"':'style="font-family:monospace;font-size:11px"';
+        html+=chainRow+`<tr style="border-left:3px solid ${sc.color}${c.inferred?';border-left-style:dashed':''}">
+          <td ${infMark}>${c.start||'—'}${c.inferred?'*':''}</td>
+          <td ${infMark}>${c.end||'—'}${c.inferred?'*':''}</td>
+          <td style="color:var(--muted);font-size:11px">${c.start&&c.end?durationLabel(c.start,c.end):'—'}</td>
+          <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${deptCol};margin-right:5px"></span>${c.dept}</td>
+          <td>${c.tier!=='—'?`<span class="cbadge" style="background:${tierCol}22;color:${tierCol}">${c.tier}</span>`:'—'}</td>
+          <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.instrument}">${c.instrument}</td>
+          <td style="font-family:monospace;font-size:11px;color:var(--muted)">${c.serial}</td>
+          <td class="num">${gbp2(c.total)}</td>
+          <td>${invLink}</td>
+          <td><span style="font-size:10px;background:${sc.bg};color:${sc.color};padding:2px 7px;border-radius:10px;white-space:nowrap">${sc.label}</span></td>
+        </tr>`;
+      });
+      document.getElementById('tl-body').innerHTML=html;
+    }
+
+    let tlData=[...tl], tlSort='serial', tlDir=1;
+
+    // Populate Gantt filter dropdowns once
+    (function populateGanttFilters(){
+      const depts=[...new Set(tl.map(c=>c.dept))].sort();
+      const tiers=[...new Set(tl.map(c=>c.tier).filter(t=>t&&t!=='—'))].sort();
+      const dSel=document.getElementById('gf-dept');
+      const tSel=document.getElementById('gf-tier');
+      depts.forEach(d=>{const o=document.createElement('option');o.value=d;o.textContent=d;dSel.appendChild(o);});
+      tiers.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;tSel.appendChild(o);});
+    })();
+
+    window.clearGanttFilters=function(){
+      ['gf-dept','gf-tier','gf-status','gf-instr','gf-serial'].forEach(id=>{
+        const el=document.getElementById(id); if(el) el.value='';
+      });
+      renderTimeline();
+    };
+
+    window.renderTimeline=function(){
+      const etl = effectiveTl();
+      renderKPIs(etl);
+
+      // Table filters
+      const fStart  =(document.getElementById('tlf-start').value||'').toLowerCase();
+      const fEnd    =(document.getElementById('tlf-end').value||'').toLowerCase();
+      const fDept   = document.getElementById('tlf-dept').value;
+      const fTier   = document.getElementById('tlf-tier').value;
+      const fInstr  =(document.getElementById('tlf-instrument').value||'').toLowerCase();
+      const fSerial =(document.getElementById('tlf-serial').value||'').toLowerCase();
+      const fCost   = parseFloat(document.getElementById('tlf-cost').value)||0;
+      const fInv    =(document.getElementById('tlf-invoice').value||'').toLowerCase();
+      const fStatus = document.getElementById('tlf-status').value;
+
+      // Gantt-specific filters
+      const gDept   = document.getElementById('gf-dept').value;
+      const gTier   = document.getElementById('gf-tier').value;
+      const gStatus = document.getElementById('gf-status').value;
+      const gInstr  =(document.getElementById('gf-instr').value||'').toLowerCase();
+      const gSerial =(document.getElementById('gf-serial').value||'').toLowerCase();
+
+      let tableData=etl.filter(c=>
+        (!fStart  || (c.start||'').includes(fStart)) &&
+        (!fEnd    || (c.end||'').includes(fEnd)) &&
+        (!fDept   || c.dept===fDept) &&
+        (!fTier   || c.tier===fTier) &&
+        (!fInstr  || (c.instrument||'').toLowerCase().includes(fInstr)) &&
+        (!fSerial || (c.serial||'').toLowerCase().includes(fSerial)) &&
+        (!fCost   || c.total>=fCost) &&
+        (!fInv    || (c.invoice||'').toLowerCase().includes(fInv)) &&
+        (!fStatus || c.status===fStatus)
+      );
+
+      let ganttData=etl.filter(c=>
+        (!gDept   || c.dept===gDept) &&
+        (!gTier   || c.tier===gTier) &&
+        (!gStatus || c.status===gStatus) &&
+        (!gInstr  || (c.instrument||'').toLowerCase().includes(gInstr)) &&
+        (!gSerial || (c.serial||'').toLowerCase().includes(gSerial))
+      );
+
+      const sortFn=(a,b)=>{
+        if(tlSort==='total') return tlDir*(a.total-b.total);
+        if(tlSort==='serial'||tlSort==='start'){
+          const ak=(a.serial!=='—'?a.serial:'zzz')+'|'+(a.start||'');
+          const bk=(b.serial!=='—'?b.serial:'zzz')+'|'+(b.start||'');
+          return ak<bk?-tlDir:ak>bk?tlDir:0;
+        }
+        const av=a[tlSort]||'',bv=b[tlSort]||'';
+        return av<bv?-tlDir:av>bv?tlDir:0;
+      };
+      tableData.sort(sortFn);
+      ganttData.sort(sortFn);
+      tlData=tableData;
+      renderGantt(ganttData);
+      renderTable(tableData);
+      // Lock min-heights after first render so filtering doesn't collapse the containers
+      const ganttWrap=document.getElementById('tl-gantt-wrap');
+      const tblWrap=document.querySelector('#svc-timeline-card .tbl-wrap');
+      if(ganttWrap&&!ganttWrap.style.minHeight) ganttWrap.style.minHeight=ganttWrap.offsetHeight+'px';
+      if(tblWrap&&!tblWrap.style.minHeight)     tblWrap.style.minHeight=tblWrap.offsetHeight+'px';
+    };
+
+    window.sortTimeline=function(key){
+      if(tlSort===key)tlDir*=-1; else{tlSort=key;tlDir=1;}
+      renderTimeline();
+    };
+
+    window.exportTimelineCsv=function(){
+      const rows=[['Invoice #','Start','End','Duration','Department','Tier','Instrument','Serial No','Cost (£)','Status']];
+      tlData.forEach(c=>rows.push([
+        c.invoice,c.start,c.end,
+        c.start&&c.end?durationLabel(c.start,c.end):'',
+        c.dept,c.tier,c.instrument,c.serial,c.total,
+        (STATUS_CFG[c.status]||{label:c.status}).label.replace(/[🟢🔴🟡🔵]/gu,'').trim()
+      ]));
+      const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const a=document.createElement('a');
+      a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+      a.download='service_contracts_timeline.csv';
+      a.click();
+    };
+
+    renderTimeline();
+  })();
+
+} // end renderSvcSection
+renderSvcSection();
+
+// ── Full-text Search ───────────────────────────────────────────────────
+(function(){
+  const SEARCH_URL = '';
+  let _debounce = null;
+  let _lastHits = [];
+
+  window.openSearch = function() {
+    document.getElementById('search-overlay').classList.add('open');
+    setTimeout(() => document.getElementById('search-input').focus(), 50);
+  };
+  window.closeSearch = function() {
+    document.getElementById('search-overlay').classList.remove('open');
+  };
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeSearch();
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); openSearch(); }
+  });
+
+  function setStatus(msg) { document.getElementById('search-status').textContent = msg; }
+  function setResults(html) { document.getElementById('search-results').innerHTML = html; }
+
+  function fmt(v) {
+    if (v == null || v === 0) return '—';
+    return '£' + Number(v).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  function scoreColor(s) {
+    if (s >= 0.70) return '#56cf8e';
+    if (s >= 0.50) return '#ff9f43';
+    return 'var(--muted)';
+  }
+
+  function renderHits(hits) {
+    _lastHits = hits;
+    document.getElementById('search-csv-btn').style.display = hits.length ? '' : 'none';
+    if (!hits.length) { setResults('<div class="sr-empty">No results found.</div>'); return; }
+    setResults(hits.map(function(h) {
+      const supLabel = h.supplier.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+      const onclick  = 'openThumbByKey(' + JSON.stringify(h.supplier) + ',' + h.invoice_id + ');closeSearch();';
+      return '<div class="sr-hit" onclick="'+onclick+'">'
+        + '<div class="sr-top">'
+        +   '<span class="sr-desc">'+(h.description || '')+'</span>'
+        +   '<span class="sr-amount">'+fmt(h.total_price)+'</span>'
+        + '</div>'
+        + '<div class="sr-meta">'
+        +   '<span class="sr-badge" style="background:rgba(108,124,255,.15);color:var(--accent)">'+supLabel+'</span>'
+        +   (h.document_type ? '<span class="sr-badge" style="background:rgba(78,205,196,.15);color:#4ecdc4">'+h.document_type+'</span>' : '')
+        +   '<span>📄 '+(h.invoice_number || h.filename)+'</span>'
+        +   '<span>📅 '+(h.invoice_date || '—')+'</span>'
+        +   (h.article ? '<span>🔧 '+h.article+'</span>' : '')
+        +   '<span style="color:var(--border)">·</span>'
+        +   '<span>Invoice total '+fmt(h.invoice_total)+'</span>'
+        + '</div>'
+        + '</div>';
+    }).join(''));
+  }
+
+  window.downloadSearchCSV = function() {
+    if (!_lastHits.length) return;
+    const cols = ['supplier','invoice_number','invoice_date','document_type','article','description','unit_price','total_price','invoice_total','seller_name','filename'];
+    const header = cols.join(',');
+    const rows = _lastHits.map(function(h) {
+      return cols.map(function(c) {
+        var v = h[c] == null ? '' : String(h[c]);
+        return v.includes(',') || v.includes('"') || v.includes('\n') ? '"' + v.replace(/"/g,'""') + '"' : v;
+      }).join(',');
+    });
+    const blob = new Blob([header + '\n' + rows.join('\n')], {type: 'text/csv'});
+    const q = document.getElementById('search-input').value.trim().replace(/[^a-z0-9]+/gi,'_').slice(0,40);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'search_' + (q || 'results') + '.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  function doSearch(q) {
+    if (!q || q.length < 2) {
+      setResults('<div class="sr-empty" style="opacity:.5">Start typing to search across all invoice line items</div>');
+      setStatus('');
+      return;
+    }
+    setStatus('Searching…');
+    const supplier = document.getElementById('sf-supplier').value;
+    const minAmt   = document.getElementById('sf-min').value;
+    const maxAmt   = document.getElementById('sf-max').value;
+    const top      = document.getElementById('sf-top').value;
+    const params   = new URLSearchParams({q: q, top: top});
+    if (supplier) params.set('supplier', supplier);
+    if (minAmt)   params.set('min_amount', minAmt);
+    if (maxAmt)   params.set('max_amount', maxAmt);
+
+    fetch(SEARCH_URL + '/search?' + params)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.error) { setStatus('Error: ' + d.error); setResults(''); return; }
+        var s = d.hits.length === 1 ? 'result' : 'results';
+        setStatus(d.hits.length + ' ' + s + ' for "' + d.query + '"');
+        renderHits(d.hits);
+      })
+      .catch(function() {
+        setStatus('⚠ Search unavailable');
+        setResults('<div class="sr-empty" style="color:#ff6b6b;opacity:.8">Could not reach the search API.</div>');
+      });
+  }
+
+  document.getElementById('search-input').addEventListener('input', function(e) {
+    clearTimeout(_debounce);
+    _debounce = setTimeout(function() { doSearch(e.target.value.trim()); }, 300);
+  });
+
+  ['sf-supplier','sf-min','sf-max','sf-top'].forEach(function(id) {
+    document.getElementById(id).addEventListener('change', function() {
+      doSearch(document.getElementById('search-input').value.trim());
+    });
+  });
+})();
+
+// ── Reports tab v2 ─────────────────────────────────────────────────────────
+(function(){
+  const THEMES = {
+    commercial:  {label:'Commercial Intelligence',  icon:'📊', desc:'Spend breakdown, top invoices, discount capture, credit notes.',                 scopes:['all','supplier'],            focuses:['full','service_contracts','price_trends','asset_traceability','department_behaviour','credit_notes']},
+    negotiation: {label:'Negotiation Brief',         icon:'🤝', desc:'Contract renewal pipeline, pricing variances, tier benchmarking.',               scopes:['all','supplier'],            focuses:['full','service_contracts','pricing_variances','renewal_pipeline']},
+    tco:         {label:'Total Cost of Ownership',   icon:'🔬', desc:'Capital + service + maintenance per instrument. Identifies hidden estate.',       scopes:['all','supplier'],            focuses:['full','capital_equipment','service_contracts','asset_traceability']},
+    risk:        {label:'Supplier Risk',             icon:'⚠️',  desc:'Portfolio concentration (HHI), single-source dependencies, Kraljic risk axis.',  scopes:['all'],                       focuses:['full','supply_concentration','service_dependency','compliance_risk']},
+    compliance:  {label:'Compliance & Governance',   icon:'📋', desc:'Three-tier audit: PO compliance, serial numbers, document classification.',       scopes:['all','supplier','department'],focuses:['full','po_compliance','serial_number_gaps','credit_notes']},
+    department:  {label:'Department Intelligence',   icon:'🏛️', desc:'Cross-supplier view by department. Fragmentation and consolidation opportunities.',scopes:['all','department'],          focuses:['full','spend_fragmentation','supplier_consolidation','department_behaviour']},
+    savings:     {label:'Savings & Value Tracking',  icon:'💷', desc:'Discount benchmarking, foregone savings, price drift. CIPS savings taxonomy.',    scopes:['all','supplier'],            focuses:['full','discount_benchmarking','price_trends','cost_avoidance']},
+    kraljic:     {label:'Market Position (Kraljic)', icon:'♟️', desc:'Classifies suppliers Strategic/Leverage/Bottleneck/Non-Critical.',                scopes:['all'],                       focuses:['full']},
+    legal:       {label:'Legal & Compliance Pack',   icon:'⚖️',  desc:'Ready-to-send formal letters: PO notice, serial number notice, pricing dispute.', scopes:['supplier'],                  focuses:['full','po_compliance_notice','serial_number_notice','pricing_dispute']},
+    invoicing:   {label:'Invoicing Quality Audit',   icon:'🧾', desc:'Supplier-facing audit of invoice format: department coverage, serial numbers, maintenance clarity, PO references. Reasons from the supplier config + procurement good practice.', scopes:['supplier'],                  focuses:['full','field_completeness','serial_number_gaps','service_contract_clarity','po_compliance']},
+    custom:      {label:'Custom Prompt',             icon:'✍️', desc:'Write your own brief — data context is attached automatically so the model has facts to work from.', scopes:['all','supplier','department'], focuses:['full']},
+  };
+  const FOCUS_LABEL = {
+    full:'Full report', service_contracts:'Service contracts', price_trends:'Price trends',
+    asset_traceability:'Asset traceability', department_behaviour:'Dept behaviour', credit_notes:'Credit notes',
+    pricing_variances:'Pricing variances', renewal_pipeline:'Renewal pipeline', capital_equipment:'Capital equipment',
+    supply_concentration:'Supply concentration', service_dependency:'Service dependency', compliance_risk:'Compliance risk',
+    po_compliance:'PO compliance', serial_number_gaps:'Serial number gaps', spend_fragmentation:'Spend fragmentation',
+    supplier_consolidation:'Supplier consolidation', discount_benchmarking:'Discount benchmarking', cost_avoidance:'Cost avoidance',
+    po_compliance_notice:'PO compliance notice', serial_number_notice:'Serial number notice', pricing_dispute:'Pricing dispute',
+    field_completeness:'Field completeness', service_contract_clarity:'Service contract clarity',
+  };
+  const COST_EST = {
+    'anthropic-all':'~$1.20','anthropic-supplier':'~$0.80','anthropic-department':'~$0.90',
+    'qwen-all':'free (local)','qwen-supplier':'free (local)','qwen-department':'free (local)',
+  };
+
+  let _init=false, _generating=false;
+  let _theme='commercial', _scope='all', _focus='full', _backend='anthropic', _category='';
+  let _allReports=[];
+
+  function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+  window.initReports = function(){
+    if(_init){refreshReports();return;}
+    _init=true;
+    renderThemeList();
+    renderScopeList();
+    renderFocusList();
+    _populatePicks();
+    refreshReports();
+  };
+
+  function _populatePicks(){
+    const supSel=document.getElementById('rpt-sup-pick');
+    if(supSel && typeof SUP_KEYS!=='undefined'){
+      SUP_KEYS.forEach(function(k,i){
+        const o=document.createElement('option');
+        o.value=k;
+        o.textContent=(typeof SUP_NAMES!=='undefined'&&SUP_NAMES[i])?SUP_NAMES[i]:k;
+        supSel.appendChild(o);
+      });
+    }
+    const deptSel=document.getElementById('rpt-dept-pick');
+    if(deptSel && typeof ALL_DEPTS!=='undefined'){
+      ALL_DEPTS.filter(function(d){return d&&d!=='Unknown';}).forEach(function(d){
+        const o=document.createElement('option');
+        o.value=d; o.textContent=d;
+        deptSel.appendChild(o);
+      });
+    }
+    const catSel=document.getElementById('rpt-cat-pick');
+    if(catSel && typeof ALL_CATS!=='undefined'){
+      ALL_CATS.forEach(function(c){
+        const o=document.createElement('option');
+        o.value=c; o.textContent=c;
+        catSel.appendChild(o);
+      });
+    }
+  }
+
+  function renderThemeList(){
+    const el=document.getElementById('rpt-theme-list');
+    if(!el)return;
+    el.innerHTML=Object.keys(THEMES).map(function(k){
+      const t=THEMES[k], active=k===_theme;
+      return '<div class="rpt-opt'+(active?' rpt-opt-active':'')+'" onclick="rptSetTheme(\''+k+'\')" title="'+esc(t.desc)+'">'
+        +'<span style="font-size:14px;flex-shrink:0">'+t.icon+'</span>'
+        +'<span style="font-size:12px">'+esc(t.label)+'</span>'
+        +'</div>';
+    }).join('');
+  }
+
+  function renderScopeList(){
+    const SCOPE_LBL={all:'All suppliers',supplier:'One supplier',department:'One department'};
+    const el=document.getElementById('rpt-scope-list');
+    if(!el)return;
+    const t=THEMES[_theme];
+    if(!t.scopes.includes(_scope)){_scope=t.scopes[0];}
+    el.innerHTML=t.scopes.map(function(s){
+      const active=s===_scope;
+      return '<div class="rpt-opt rpt-opt-pill'+(active?' rpt-opt-active':'')+'" onclick="rptSetScope(\''+s+'\')">'+esc(SCOPE_LBL[s])+'</div>';
+    }).join('');
+    const sw=document.getElementById('rpt-sup-wrap');
+    const dw=document.getElementById('rpt-dept-wrap');
+    if(sw) sw.style.display=_scope==='supplier'?'block':'none';
+    if(dw) dw.style.display=_scope==='department'?'block':'none';
+    updateCostHint();
+    refreshArchive();
+  }
+
+  function renderFocusList(){
+    const el=document.getElementById('rpt-focus-list');
+    if(!el)return;
+    const focuses=THEMES[_theme].focuses;
+    if(!focuses.includes(_focus)) _focus=focuses[0];
+    el.innerHTML=focuses.map(function(f){
+      const active=f===_focus;
+      return '<div class="rpt-opt rpt-opt-pill'+(active?' rpt-opt-active':'')+'" onclick="rptSetFocus(\''+f+'\')">'+esc(FOCUS_LABEL[f]||f)+'</div>';
+    }).join('');
+  }
+
+  function updateGenBtn(){
+    const lbl=document.getElementById('rpt-gen-label');
+    if(lbl){const t=THEMES[_theme]; lbl.textContent=t.icon+' '+t.label;}
+  }
+
+  function updateCostHint(){
+    const el=document.getElementById('rpt-cost-hint');
+    if(el) el.textContent=(COST_EST[_backend+'-'+_scope]||'~$1.00')+'  ·  30–90 s';
+  }
+
+  window.rptSetTheme=function(k){
+    _theme=k;
+    const t=THEMES[k];
+    if(!t.scopes.includes(_scope)) _scope=t.scopes[0];
+    if(!t.focuses.includes(_focus)) _focus=t.focuses[0];
+    renderThemeList(); renderScopeList(); renderFocusList(); updateGenBtn();
+    const cw=document.getElementById('rpt-custom-wrap');
+    const fw=document.getElementById('rpt-focus-wrap');
+    if(cw) cw.style.display = (k==='custom') ? 'block' : 'none';
+    if(fw) fw.style.display = (k==='custom') ? 'none' : 'block';
+  };
+  window.rptSetScope=function(s){_scope=s; renderScopeList(); updateGenBtn();};
+  window.rptSetFocus=function(f){_focus=f; renderFocusList();};
+  window.rptSetBackend=function(b){
+    _backend=b;
+    document.getElementById('rpt-model-claude').classList.toggle('rpt-opt-active',b==='anthropic');
+    document.getElementById('rpt-model-qwen').classList.toggle('rpt-opt-active',b==='qwen');
+    updateCostHint();
+  };
+
+  window.refreshReports=function(){
+    fetch('/reports')
+      .then(function(r){return r.json();})
+      .then(function(list){_allReports=list; refreshArchive();})
+      .catch(function(e){console.error('reports fetch error',e);});
+  };
+
+  var _THEME_META={
+    commercial_intel:{icon:'📊',label:'Commercial Intelligence'},
+    negotiation:{icon:'🤝',label:'Negotiation Brief'},
+    tco:{icon:'⚙',label:'Total Cost of Ownership'},
+    supplier_risk:{icon:'⚠',label:'Supplier Risk'},
+    compliance:{icon:'🏛',label:'Compliance & Governance'},
+    department_intel:{icon:'🏢',label:'Department Intelligence'},
+    savings:{icon:'💰',label:'Savings & Value Tracking'},
+    kraljic:{icon:'🎯',label:'Market Position (Kraljic)'},
+    legal:{icon:'⚖',label:'Legal & Compliance Pack'},
+    invoicing:{icon:'📋',label:'Invoicing Quality Audit'},
+    custom:{icon:'✏',label:'Custom Prompt'}
+  };
+
+  function refreshArchive(){
+    var grid=document.getElementById('rpt-card-grid');
+    var emptyMsg=document.getElementById('rpt-card-empty');
+    if(!grid) return;
+    var list=_allReports;
+    if(!list.length){
+      grid.style.display='none';
+      if(emptyMsg) emptyMsg.style.display='flex';
+      return;
+    }
+    if(emptyMsg) emptyMsg.style.display='none';
+    grid.style.display='grid';
+    grid.innerHTML=list.map(function(r){
+      var th=_THEME_META[r.theme]||{icon:'📄',label:(r.theme||'').replace(/_/g,' ')};
+      var date=(r.generated_at||'').slice(0,10);
+      var cost=r.cost_usd!=null?' · $'+Number(r.cost_usd).toFixed(2):'';
+      var scope=r.scope?' · '+r.scope:'';
+      var title=r.title||r.display_name||r.filename;
+      var fn=JSON.stringify(r.filename);
+      return '<div style="border:1px solid var(--border);border-radius:8px;padding:12px 14px;background:var(--surf);display:flex;flex-direction:column;gap:8px;transition:border-color .12s" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--border)\'">'
+        +'<div style="font-size:10px;color:var(--muted)">'+esc(th.icon+' '+th.label+scope)+'</div>'
+        +'<div style="font-size:12px;font-weight:600;color:var(--text);line-height:1.35;flex:1">'+esc(title.length>60?title.slice(0,60)+'…':title)+'</div>'
+        +'<div style="font-size:10px;color:var(--muted);font-family:monospace">'+esc(date+cost)+'</div>'
+        +'<div style="display:flex;gap:6px">'
+        +"<button onclick='rptOpenArchive("+fn+")' style=\"flex:1;font-size:11px;padding:5px 0;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600\">Open</button>"
+        +"<button onclick='deleteReport("+fn+",this)' style=\"font-size:11px;padding:5px 9px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:6px;cursor:pointer\" title='Delete' onmouseover=\"this.style.background='#ff6b6b22';this.style.color='#ff6b6b'\" onmouseout=\"this.style.background='transparent';this.style.color='var(--muted)'\">&#x2715;</button>"
+        +'</div>'
+        +'</div>';
+    }).join('');
+  }
+
+  window.rptOpenArchive=function(filename){
+    const r=_allReports.find(function(x){return x.filename===filename;})||{filename:filename};
+    _showViewer(r);
+  };
+
+  window.rptCloseViewer=function(){
+    const wrap=document.getElementById('rpt-viewer-wrap');
+    const empty=document.getElementById('rpt-viewer-empty');
+    const frame=document.getElementById('rpt-iframe');
+    if(wrap)  wrap.style.display='none';
+    if(empty) empty.style.display='';
+    if(frame) frame.src='';
+  };
+
+  function _showViewer(r){
+    const url='/reports/'+encodeURIComponent(r.filename);
+    const titleEl=document.getElementById('rpt-viewer-title');
+    const dateEl=document.getElementById('rpt-viewer-date');
+    const costEl=document.getElementById('rpt-viewer-cost');
+    const linkEl=document.getElementById('rpt-viewer-link');
+    if(titleEl) titleEl.textContent=r.title||r.display_name||r.filename;
+    if(dateEl)  dateEl.textContent=(r.generated_at||'').slice(0,16).replace('T',' ');
+    if(costEl)  costEl.textContent=r.cost_usd!=null
+      ?'$'+Number(r.cost_usd).toFixed(4)+' · '+(r.input_tokens||0).toLocaleString()+' in / '+(r.output_tokens||0).toLocaleString()+' out':'';
+    if(linkEl){linkEl.href=url;}
+    const frame=document.getElementById('rpt-iframe');
+    if(frame) frame.src=url;
+    const wrap=document.getElementById('rpt-viewer-wrap');
+    const empty=document.getElementById('rpt-viewer-empty');
+    if(wrap)  wrap.style.display='';
+    if(empty) empty.style.display='none';
+  }
+
+  function _genDone(){
+    const btn=document.getElementById('rpt-gen-btn');
+    const statusEl=document.getElementById('rpt-status');
+    if(btn){btn.disabled=false; btn.style.opacity='';}
+    if(statusEl) statusEl.style.display='none';
+    _generating=false;
+  }
+
+  function _showReportError(msg){
+    const err=document.getElementById('rpt-error');
+    const txt=document.getElementById('rpt-error-text');
+    const hint=document.getElementById('rpt-error-hint');
+    if(!err||!txt) return;
+    txt.textContent = msg || 'Unknown error';
+    let h='';
+    if(/tool-use loop exceeded/i.test(msg||'')){
+      h='The model spent its budget calling tools without producing a final report. Try a narrower brief (one supplier, one question), shorter date range, or switch to the Claude backend.';
+    } else if(/empty content/i.test(msg||'')){
+      h='The model returned no content. This usually means the prompt was too restrictive or the context was exhausted. Try a different scope.';
+    } else if(/Local model server is offline|connection|timeout/i.test(msg||'')){
+      h='The Qwen server is unreachable. Check the Services tab. Or switch to the Claude backend.';
+    }
+    hint.textContent=h;
+    hint.style.display = h ? 'block' : 'none';
+    err.style.display='flex';
+  }
+
+  document.addEventListener('DOMContentLoaded',function(){
+    const btn=document.getElementById('rpt-error-dismiss');
+    if(btn) btn.addEventListener('click',function(){
+      const err=document.getElementById('rpt-error');
+      if(err) err.style.display='none';
+    });
+  });
+
+  var _currentJobId = null;
+
+  function _pollJob(jobId, elapsed){
+    elapsed=elapsed||0;
+    fetch('/reports/jobs/'+encodeURIComponent(jobId))
+      .then(function(r){return r.json();})
+      .then(function(job){
+        const statusTxt=document.getElementById('rpt-status-text');
+        if(job.status==='done'){
+          _currentJobId=null;
+          _genDone();
+          _allReports=[];
+          refreshReports();
+          if(job.result&&job.result.filename) setTimeout(function(){_showViewer(job.result);},300);
+        } else if(job.status==='error'){
+          _currentJobId=null;
+          _genDone();
+          _showReportError(job.error||job.status_text||'Unknown error');
+        } else if(job.status==='cancelled'){
+          _currentJobId=null;
+          _genDone();
+        } else {
+          // still running — update elapsed and poll again
+          const secs=elapsed+4;
+          const txt=job.status_text||('Generating '+THEMES[_theme].label+'…');
+          if(statusTxt) statusTxt.textContent=txt+' ('+secs+'s)';
+          setTimeout(function(){_pollJob(jobId,secs);},4000);
+        }
+      })
+      .catch(function(){
+        // network blip — retry
+        setTimeout(function(){_pollJob(jobId,elapsed+4);},4000);
+      });
+  }
+
+  window.cancelReport=function(){
+    if(!_currentJobId) return;
+    const jobId=_currentJobId;
+    _currentJobId=null;
+    fetch('/reports/jobs/'+encodeURIComponent(jobId),{method:'DELETE'}).catch(function(){});
+    _genDone();
+  };
+
+  window.generateReportV2=function(){
+    if(_generating) return;
+    if(_scope==='supplier' && !(document.getElementById('rpt-sup-pick')||{}).value){alert('Select a supplier.');return;}
+    if(_scope==='department' && !(document.getElementById('rpt-dept-pick')||{}).value){alert('Select a department.');return;}
+    const customPrompt = (document.getElementById('rpt-custom-prompt')||{}).value||'';
+    if(_theme==='custom' && !customPrompt.trim()){alert('Write a brief for the custom report.');return;}
+    _generating=true;
+    const btn=document.getElementById('rpt-gen-btn');
+    if(btn){btn.disabled=true; btn.style.opacity='0.6';}
+    const statusEl=document.getElementById('rpt-status');
+    const statusTxt=document.getElementById('rpt-status-text');
+    if(statusEl) statusEl.style.display='flex';
+    if(statusTxt) statusTxt.textContent='Submitting request…';
+    const sup      =_scope==='supplier'   ?(document.getElementById('rpt-sup-pick') ||{}).value||'':'';
+    const dept     =_scope==='department' ?(document.getElementById('rpt-dept-pick')||{}).value||'':'';
+    const cat      =(document.getElementById('rpt-cat-pick') ||{}).value||'';
+    const dateFrom =(document.getElementById('rpt-date-from')||{}).value||'';
+    const dateTo   =(document.getElementById('rpt-date-to')  ||{}).value||'';
+    if(dateFrom && dateTo && dateFrom > dateTo){alert("'From' date must be before 'To' date.");_genDone();return;}
+    const params=new URLSearchParams({theme:_theme,scope:_scope,supplier:sup,department:dept,section_focus:_focus,backend:_backend,category:cat,date_from:dateFrom,date_to:dateTo,custom_prompt:customPrompt});
+    fetch('/reports/generate-v2?'+params.toString(),{method:'POST'})
+      .then(function(r){if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
+      .then(function(resp){
+        if(resp.job_id){
+          // async path — poll until done
+          _currentJobId=resp.job_id;
+          if(statusTxt) statusTxt.textContent='Generating '+THEMES[_theme].label+'… 0s elapsed.';
+          _pollJob(resp.job_id, 0);
+        } else if(resp.filename){
+          // sync fallback (legacy)
+          _genDone(); _allReports=[]; refreshReports();
+          setTimeout(function(){_showViewer(resp);},300);
+        }
+      })
+      .catch(function(e){
+        _genDone();
+        _showReportError('Failed to start report: '+e.message);
+      });
+  };
+
+  window.deleteReport=function(filename,btn){
+    if(!btn||btn.dataset.pending!=='1'){
+      if(btn){
+        btn.dataset.pending='1'; btn.textContent='sure?';
+        btn.style.background='#ff6b6b22'; btn.style.color='#ff6b6b'; btn.style.borderColor='#ff6b6b';
+        setTimeout(function(){if(btn.dataset.pending==='1'){btn.dataset.pending='';btn.textContent='✕';btn.style.background='';btn.style.color='';btn.style.borderColor='';}},3000);
+      }
+      return;
+    }
+    btn.disabled=true;
+    fetch('/reports/'+encodeURIComponent(filename),{method:'DELETE'})
+      .then(function(r){if(!r.ok)return r.text().then(function(t){throw new Error(t);});refreshReports();})
+      .catch(function(e){btn.disabled=false;btn.dataset.pending='';btn.textContent='✕';btn.style.background='';btn.style.color='';btn.style.borderColor='';console.error('Delete failed: '+e.message);});
+  };
+})();
+
+// ── Reagents Intel ───────────────────────────────────────────────────────────
+(function(){
+  const RG_PAL = ['#a78bfa','#6c7cff','#4ecdc4','#56cf8e','#f97316','#ef4444',
+                  '#22c55e','#84cc16','#eab308','#06b6d4','#c77dff','#ff9f43',
+                  '#dc2626','#64748b','#475569','#818cf8','#94a3b8'];
+  let _rgMainChart = null, _rgDeptChart = null;
+  let _rgSelKey = null;
+  let _rgSort = { key: 'total_price', dir: -1 };
+  let _rgPage = 0;
+  const RG_PS = 25;
+
+  function rgItems() {
+    const base = G_SUP ? ITEMS.filter(i => i.supplier_name === G_SUP) : ITEMS;
+    return base.filter(i => (i.category || '') === 'Consumables' && i.total_price != null);
+  }
+
+  function rgUpdateKPIs(items) {
+    const spend = items.reduce((s, i) => s + i.total_price, 0);
+    document.getElementById('rg-kpi-spend').textContent = gbp(spend);
+    const skus = new Set(items.map(i => i.article || i.description).filter(Boolean));
+    document.getElementById('rg-kpi-skus').textContent = skus.size.toLocaleString();
+    if (G_SUP) {
+      const skuMap = {};
+      items.forEach(i => { const k = i.article || i.description || '?'; if (!skuMap[k]) skuMap[k] = {count:0, desc: i.description||k}; skuMap[k].count++; });
+      const top = Object.entries(skuMap).sort((a,b)=>b[1].count-a[1].count)[0];
+      document.getElementById('rg-kpi-top-label').textContent = 'Most Ordered';
+      document.getElementById('rg-kpi-top').textContent = top ? top[1].desc.slice(0,30) : '—';
+      document.getElementById('rg-kpi-top-sub').textContent = top ? top[1].count + ' orders' : '';
+    } else {
+      const supMap = {};
+      items.forEach(i => { supMap[i.supplier_name] = (supMap[i.supplier_name] || 0) + i.total_price; });
+      const top = Object.entries(supMap).sort((a,b)=>b[1]-a[1])[0];
+      document.getElementById('rg-kpi-top-label').textContent = 'Top Supplier';
+      document.getElementById('rg-kpi-top').textContent = top ? top[0] : '—';
+      document.getElementById('rg-kpi-top-sub').textContent = top ? gbp(top[1]) : '';
+    }
+    const deptMap = {};
+    items.forEach(i => { const d = i.department || 'Unknown'; deptMap[d] = (deptMap[d] || 0) + i.total_price; });
+    const topDept = Object.entries(deptMap).sort((a,b)=>b[1]-a[1])[0];
+    document.getElementById('rg-kpi-dept').textContent = topDept ? topDept[0] : '—';
+  }
+
+  function buildRgMainChart(items) {
+    const isSingle = !!G_SUP;
+    let rows, colorFn;
+    if (isSingle) {
+      const agg = {};
+      items.forEach(i => {
+        const k = i.article || i.description || '?';
+        if (!agg[k]) agg[k] = { label: (i.description || k).slice(0, 40), spend: 0 };
+        agg[k].spend += i.total_price;
+      });
+      rows = Object.entries(agg).map(([k, v]) => ({ key: k, label: v.label, spend: v.spend }))
+        .sort((a, b) => b.spend - a.spend).slice(0, 15);
+      document.getElementById('rg-main-chart-title').textContent = 'Top SKUs by Spend';
+      colorFn = (r, i) => RG_PAL[i % RG_PAL.length];
+    } else {
+      const supCol = {};
+      SUP_TOTALS.forEach(s => { supCol[s.display] = s.color; });
+      const agg = {};
+      items.forEach(i => { agg[i.supplier_name] = (agg[i.supplier_name] || 0) + i.total_price; });
+      rows = Object.entries(agg).map(([k, v]) => ({ key: k, label: k, spend: v, color: supCol[k] || '#aaa' }))
+        .sort((a, b) => b.spend - a.spend);
+      document.getElementById('rg-main-chart-title').textContent = 'Consumable Spend by Supplier';
+      colorFn = (r) => r.color;
+    }
+
+    const ctx = document.getElementById('c-rg-main').getContext('2d');
+    if (_rgMainChart) _rgMainChart.destroy();
+    _rgMainChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => r.label),
+        datasets: [{
+          data: rows.map(r => r.spend),
+          backgroundColor: rows.map((r, i) => (r.key === _rgSelKey ? colorFn(r,i) : colorFn(r,i) + '99')),
+          borderColor:     rows.map((r, i) => colorFn(r, i)),
+          borderWidth: 1, borderRadius: 4,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        onClick: (e, els) => {
+          if (!els.length) return;
+          const row = rows[els[0].index];
+          _rgSelKey = row.key;
+          document.getElementById('rg-main-reset').style.display = 'inline';
+          buildRgMainChart(items);
+          buildRgDeptSection(items, row.key, isSingle);
+          document.getElementById('rg-drill-section').style.display = 'grid';
+          document.getElementById('rg-dept-title').textContent =
+            (isSingle ? row.label : row.key) + ' — by Department';
+          document.getElementById('rg-sku-title').textContent =
+            (isSingle ? row.key : row.key) + ' — Top SKUs';
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: c => ' ' + gbp(c.raw) + '  (click to drill down)' } }
+        },
+        scales: {
+          x: { ticks: { color: tc, callback: v => v>=1e6 ? '£'+(v/1e6).toFixed(1)+'M' : '£'+Math.round(v/1e3)+'k' }, grid: { color: gc } },
+          y: { ticks: { color: tc, font: { size: 11 } }, grid: { display: false } }
+        }
+      }
+    });
+
+    if (isSingle && !_rgSelKey && rows.length) {
+      _rgSelKey = rows[0].key;
+      document.getElementById('rg-drill-section').style.display = 'grid';
+      document.getElementById('rg-dept-title').textContent = rows[0].label + ' — by Department';
+      document.getElementById('rg-sku-title').textContent = 'Top SKUs';
+      buildRgDeptSection(items, rows[0].key, true);
+    }
+  }
+
+  function buildRgDeptSection(items, key, isSingle) {
+    const filtered = isSingle
+      ? items.filter(i => (i.article || i.description || '?') === key)
+      : items.filter(i => i.supplier_name === key);
+    const deptMap = {};
+    filtered.forEach(i => { const d = i.department || 'Unknown'; deptMap[d] = (deptMap[d] || 0) + i.total_price; });
+    const rows = Object.entries(deptMap).map(([d, v]) => ({ dept: d, spend: v })).sort((a,b) => b.spend - a.spend);
+
+    const ctx = document.getElementById('c-rg-dept').getContext('2d');
+    if (_rgDeptChart) _rgDeptChart.destroy();
+    const color = isSingle ? RG_PAL[0] : ((SUP_TOTALS.find(s => s.display === key) || {}).color || '#a78bfa');
+    _rgDeptChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => r.dept),
+        datasets: [{ data: rows.map(r => r.spend), backgroundColor: color+'cc', borderColor: color, borderWidth:1, borderRadius:4 }]
+      },
+      options: {
+        indexAxis: 'y',
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' ' + gbp(c.raw) } } },
+        scales: {
+          x: { ticks: { color: tc, callback: v => '£'+Math.round(v/1e3)+'k' }, grid: { color: gc } },
+          y: { ticks: { color: tc, font: { size: 11 } }, grid: { display: false } }
+        }
+      }
+    });
+
+    const skuSrc = isSingle ? items.filter(i => i.supplier_name === (G_SUP || key)) : items.filter(i => i.supplier_name === key);
+    const skuMap = {};
+    skuSrc.forEach(i => {
+      const k = i.article || i.description || '?';
+      if (!skuMap[k]) skuMap[k] = { desc: i.description || k, spend: 0 };
+      skuMap[k].spend += i.total_price;
+    });
+    const topSkus = Object.entries(skuMap).map(([k, v]) => ({ article: k, desc: v.desc, spend: v.spend }))
+      .sort((a,b) => b.spend - a.spend).slice(0, 10);
+    document.getElementById('rg-sku-mini-body').innerHTML = topSkus.map(r =>
+      `<tr><td style="font-family:monospace;font-size:10px">${r.article}</td><td style="font-size:11px">${r.desc.slice(0,45)}</td><td class="num">${gbp2(r.spend)}</td></tr>`
+    ).join('') || '<tr><td colspan="3" style="color:var(--muted);font-size:11px">—</td></tr>';
+  }
+
+  window.clearRgMainSelect = function() {
+    _rgSelKey = null;
+    document.getElementById('rg-main-reset').style.display = 'none';
+    document.getElementById('rg-drill-section').style.display = 'none';
+    if (_rgDeptChart) { _rgDeptChart.destroy(); _rgDeptChart = null; }
+    buildRgMainChart(rgItems());
+  };
+
+  function populateRgFilters(items) {
+    const sups  = [...new Set(items.map(i => i.supplier_name).filter(Boolean))].sort();
+    const depts = [...new Set(items.map(i => i.department).filter(Boolean))].sort();
+    document.getElementById('rg-sup-filter').innerHTML =
+      '<option value="">All Suppliers</option>' + sups.map(s => `<option>${s}</option>`).join('');
+    document.getElementById('rg-dept-filter').innerHTML =
+      '<option value="">All Departments</option>' + depts.map(d => `<option>${d}</option>`).join('');
+    document.getElementById('rg-sup-filter').style.display = G_SUP ? 'none' : '';
+  }
+
+  window.sortRg = function(key) {
+    if (_rgSort.key === key) _rgSort.dir *= -1; else { _rgSort.key = key; _rgSort.dir = -1; }
+    _rgPage = 0; window.renderRgTable();
+  };
+
+  window.renderRgTable = function() {
+    const items = rgItems();
+    const q    = (document.getElementById('rg-search').value || '').toLowerCase();
+    const sup  = document.getElementById('rg-sup-filter').value;
+    const dept = document.getElementById('rg-dept-filter').value;
+    let rows = items.filter(r =>
+      (!q   || (r.article||'').toLowerCase().includes(q) ||
+                (r.description||'').toLowerCase().includes(q) ||
+                (r.invoice_number||'').toLowerCase().includes(q)) &&
+      (!sup  || r.supplier_name === sup) &&
+      (!dept || (r.department||'') === dept)
+    );
+    rows.sort((a, b) => {
+      const va = a[_rgSort.key], vb = b[_rgSort.key];
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1; if (vb == null) return -1;
+      return _rgSort.dir * (va < vb ? -1 : va > vb ? 1 : 0);
+    });
+    const total = rows.length, pages = Math.max(1, Math.ceil(total / RG_PS));
+    if (_rgPage >= pages) _rgPage = 0;
+    const slice = rows.slice(_rgPage * RG_PS, (_rgPage+1) * RG_PS);
+    const sc = it => it.supplier_color || '#aaa';
+    document.getElementById('rg-tbody').innerHTML = slice.map(r => {
+      const invCell = r.invoice_id != null
+        ? `<a onclick="openThumbByKey('${r.supplier}',${r.invoice_id})" style="color:var(--accent);text-decoration:none;cursor:pointer;font-family:monospace;font-size:11px" title="Open PDF">${r.invoice_number||r.filename||'—'} 📄</a>`
+        : `<span style="font-family:monospace;font-size:11px">${r.invoice_number||r.filename||'—'}</span>`;
+      return `<tr>
+        <td style="font-family:monospace;font-size:11px">${r.article||'—'}</td>
+        <td style="font-size:12px">${(r.description||'—').slice(0,55)}</td>
+        <td><span style="background:${sc(r)}22;color:${sc(r)};border:1px solid ${sc(r)}55;padding:2px 7px;border-radius:10px;font-size:10px;white-space:nowrap">${r.supplier_name||'—'}</span></td>
+        <td>${invCell}</td>
+        <td class="num" style="font-size:11px">${r.invoice_date||'—'}</td>
+        <td style="font-size:11px">${r.department||'—'}</td>
+        <td class="num">${r.quantity!=null?r.quantity:'—'}</td>
+        <td class="num">${r.unit_price!=null?gbp2(r.unit_price):'—'}</td>
+        <td class="num">${r.total_price!=null?gbp2(r.total_price):'—'}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">No consumable lines match.</td></tr>';
+    document.getElementById('rg-pager').innerHTML = pages <= 1 ? `<span>${total} lines</span>` :
+      `<span>${total} lines</span>` +
+      (_rgPage > 0 ? `<button onclick="_rgPage--;window.renderRgTable()">‹ Prev</button>` : '') +
+      `<span>Page ${_rgPage+1} / ${pages}</span>` +
+      (_rgPage < pages-1 ? `<button onclick="_rgPage++;window.renderRgTable()">Next ›</button>` : '');
+  };
+
+  window.initReagents = function() {
+    _rgSelKey = null;
+    if (_rgMainChart) { _rgMainChart.destroy(); _rgMainChart = null; }
+    if (_rgDeptChart) { _rgDeptChart.destroy(); _rgDeptChart = null; }
+    document.getElementById('rg-drill-section').style.display = 'none';
+    document.getElementById('rg-main-reset').style.display = 'none';
+    _rgPage = 0;
+    const items = rgItems();
+    rgUpdateKPIs(items);
+    populateRgFilters(items);
+    buildRgMainChart(items);
+    window.renderRgTable();
+  };
+
+  // expose pager counter for onclick strings
+  Object.defineProperty(window, '_rgPage', {
+    get: () => _rgPage,
+    set: v => { _rgPage = v; },
+  });
+})();
+</script>
+
+<!-- Invoice thumbnail modal -->
+<div id="thumb-overlay" onclick="if(event.target===this)closeThumb()">
+  <div id="thumb-panel">
+    <div id="thumb-header">
+      <h3 id="thumb-title">Invoice</h3>
+      <span id="thumb-meta"></span>
+      <a id="thumb-pdf-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:11px;padding:4px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--muted);border-radius:5px;text-decoration:none;white-space:nowrap">↗ Open PDF</a>
+      <button id="thumb-close" onclick="closeThumb()">✕</button>
+    </div>
+    <div id="thumb-body">
+      <div id="thumb-noimg" style="display:none">No preview available for this invoice.</div>
+      <div id="thumb-pages" style="display:flex;flex-direction:column;gap:8px;align-items:center;width:100%"></div>
+      <div id="thumb-details"></div>
+    </div>
+  </div>
+</div>
+{{USAGE_TRACKER_JS}}
+</body>
+</html>

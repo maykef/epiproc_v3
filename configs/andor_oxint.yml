@@ -1,0 +1,240 @@
+supplier: andor_oxint
+dedup_key: invoice_number
+
+dashboard:
+  display_name: "Andor / Oxford Instruments"
+  color: "#005eb8"
+  payer_fallback_keywords:
+    - "Finance"
+    - "Accounts"
+    - "Billing"
+    - "Central"
+  negative_document_types:
+    - "CREDIT NOTE"
+    - "CREDIT MEMO"
+    - "CANCELLATION INVOICE"
+  # Canonical document_type values this supplier legitimately emits. Read by
+  # the invoicing audit (D9). If absent, D9 is skipped for the supplier.
+  document_types:
+    - "Invoice"
+    - "Credit Note"
+    - "Credit Memo"
+    - "Cancellation Invoice"
+
+input_dir: invoices/andor_oxint
+output_dir: databases
+db_filename: invoices_andor_oxint.db
+
+pdf_dpi: 100
+max_tokens: 4096
+
+extraction_prompt: |
+  You are an invoice extraction engine. You are processing Page 1 of an invoice from "Andor Technology Limited" or "Oxford Instruments Andor".
+  
+  LAYOUT RULES:
+  - The document usually has a two-column layout: "Bill To" / "Addressed To" on the left, and Invoice Metadata (Invoice No, Date, Order No) on the right.
+  - Seller info (Andor/Oxford Instruments) is typically at the top or bottom.
+  - Line items are in a table. Look for columns: PART NUMBER, DESCRIPTION, QUANTITY, UNIT PRICE, VALUE.
+  - There is NO "Position" column and NO "Unit" column in the table headers.
+  - Serial numbers (S/N: ...) and contact details are often embedded within the "DESCRIPTION" column.
+  - "Carriage Charge" may appear as a line item or in the totals section.
+  - Totals section is usually right-aligned at the bottom of the page or on the final page. Labels: "NET AMOUNT", "VAT", "TOTAL DUE".
+  - Currency is GBP (£).
+  - Date formats: dates are printed as DD/MM/YY by default (UK supplier, UK customer). Only interpret as MM/DD/YY when the first component exceeds 12 (forcing it to be a month) AND the second component is ≤ 12. Convert all dates to YYYY-MM-DD.
+  - Invoice Number formats: Starts with "OP/I" or "OP/" followed by digits (e.g., OP/I123456, OP/1234567).
+  
+  EXTRACTION INSTRUCTIONS:
+  1. Identify Document Type: Default to "invoice" unless "CREDIT NOTE" or similar is explicitly stated.
+  2. Extract Seller: Name, Address, VAT Number, Registration Number, Phone, Website. Also look for EORI number in the footer and store it in the "notes" field if no specific field exists, or ignore if not critical.
+  3. Extract Buyer: Name, Department, Address, Customer Number.
+  4. Extract References:
+     - "Invoice No" -> "invoice_number" (top level)
+     - "Invoice Date" -> "invoice_date" (top level)
+     - "Order No" -> "references.order_reference"
+     - "Customer Order No" -> "references.your_reference"
+     - "Account Ref" -> "references.order_confirmation"
+     - "Customer VAT No" -> append to "notes" (this is the buyer's VAT registration number, not a tenant-stable customer account number). Leave buyer.customer_number = null.
+  5. Extract Line Items:
+     - Parse the table using headers: PART NUMBER, DESCRIPTION, QUANTITY, UNIT PRICE, VALUE.
+     - Map "PART NUMBER" to "article".
+     - Map "DESCRIPTION" to "description" (keep full text including S/N and contact info).
+     - Map "QUANTITY" to "quantity".
+     - Map "UNIT PRICE" to "unit_price".
+     - Map "VALUE" to "total_price".
+     - Set "position" to null (no position column exists).
+     - Set "unit" to null (no unit column exists).
+  6. Extract Totals:
+     - "subtotal": Sum of ALL line item total_prices on this page (and subsequent pages).
+     - "freight": Look for "Carriage Charge".
+     - "vat_amount" and "vat_rate_percent".
+     - "total": The "TOTAL DUE" or "Grand Total".
+  7. Extract Bank Details: Look for IBAN, BIC/SWIFT, Sort Code, Account Number, Bank Name (often HSBC).
+  8. Extract Subscription Period from line-item descriptions (case-insensitive). Recognise THREE phrasings:
+     (a) Date range: "1/1/26 - 31/03/26" → start + end
+     (b) Explicit label: "TO COVER SYSTEM UNTIL <date>" → end only; leave start = null
+     (c) Bare `until <date>` anywhere in description (e.g. "to cover M019810, M031218 until 12/12/27", "DFLY UNDER MAINTENANCE UNTIL 31/12/25") → end only; leave start = null
+     Convert all dates to YYYY-MM-DD.
+  
+  ARITHMETIC CHECK (MANDATORY):
+  - Calculate: subtotal - discount_amount + freight + vat_amount.
+  - This must equal "total" (within 1 currency unit).
+  - If there is a discrepancy, re-evaluate the line items or totals.
+  - discount_amount is always positive. If no discount, use null.
+  
+  OUTPUT FORMAT:
+  Return ONLY valid JSON. No markdown. Use null for missing fields.
+  Dates must be YYYY-MM-DD.
+  Monetary values must be plain numbers.
+  
+  JSON TEMPLATE:
+  {
+    "document_type": null,
+    "invoice_number": null,
+    "invoice_date": null,
+    "currency": "GBP",
+    "seller": {
+      "name": null,
+      "address": null,
+      "vat_number": null,
+      "registration_number": null,
+      "phone": null,
+      "website": null
+    },
+    "buyer": {
+      "name": null,
+      "department": null,
+      "address": null,
+      "customer_number": null
+    },
+    "ship_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "sold_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "references": {
+      "your_reference": null,
+      "order_reference": null,
+      "order_date": null,
+      "order_confirmation": null,
+      "sales_person": null,
+      "coordinator": null
+    },
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "subscription_period": {
+      "start": null,
+      "end": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }
+
+continuation_prompt: |
+  You are processing Page 2+ of an invoice from "Andor Technology Limited" or "Oxford Instruments Andor".
+  
+  CONTEXT:
+  - You are receiving additional line items and the final totals section.
+  - The final "total" and "bank_details" from this page overwrite any previous values.
+  - Line items from this page must be APPENDED to the list from Page 1.
+  - The "subtotal" must be the SUM of ALL line items across ALL pages (Page 1 + this page).
+  
+  LAYOUT RULES:
+  - Look for the final summary section: "NET AMOUNT", "VAT", "TOTAL DUE".
+  - Check for "Carriage Charge" if not on Page 1.
+  - Check for Subscription Period details if not on Page 1.
+  - Bank details (IBAN, BIC, Sort Code) are often in the footer.
+  
+  EXTRACTION INSTRUCTIONS:
+  1. Extract additional line items (same format as Page 1: PART NUMBER, DESCRIPTION, QUANTITY, UNIT PRICE, VALUE).
+  2. Extract final totals:
+     - Recalculate "subtotal" as sum of ALL line items (Page 1 + Page 2+).
+     - Extract "freight" (Carriage Charge).
+     - Extract "vat_amount", "vat_rate_percent".
+     - Extract "total" (Grand Total).
+  3. Extract Bank Details if present in footer.
+  4. Extract Subscription Period if present. Recognise THREE phrasings (same as Page 1):
+     (a) Date range: "1/1/26 - 31/03/26" → start + end
+     (b) Explicit label: "TO COVER SYSTEM UNTIL <date>" → end only; leave start = null
+     (c) Bare `until <date>` anywhere in description → end only; leave start = null
+     Convert all dates to YYYY-MM-DD.
+  
+  ARITHMETIC CHECK (MANDATORY):
+  - Calculate: subtotal - discount_amount + freight + vat_amount.
+  - This must equal "total".
+  
+  OUTPUT FORMAT:
+  Return ONLY valid JSON. No markdown.
+  Include ONLY the fields that are present or need updating on this page.
+  For line_items, provide the list of items found on THIS page only (the pipeline will merge them).
+  For totals, provide the final calculated values.
+  
+  JSON TEMPLATE (Partial):
+  {
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "subscription_period": {
+      "start": null,
+      "end": null
+    },
+    "payment_terms": null,
+    "notes": null
+  }

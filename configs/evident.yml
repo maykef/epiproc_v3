@@ -1,0 +1,301 @@
+supplier: evident
+dedup_key: invoice_number
+
+dashboard:
+  display_name: "Evident Europe GmbH"
+  color: "#0055A4"
+  payer_fallback_keywords:
+    - "Central Finance"
+    - "Accounts Payable"
+    - "Billing Department"
+    - "Finance"
+  negative_document_types:
+    - "CREDIT NOTE"
+    - "CREDIT MEMO"
+    - "CANCELLATION INVOICE"
+  # Canonical document_type values this supplier legitimately emits. Read by
+  # the invoicing audit (D9). If absent, D9 is skipped for the supplier.
+  document_types:
+    - "INVOICE"
+    - "INVOICE / TAX DOCUMENT"
+    - "CREDIT NOTE"
+    - "CREDIT MEMO"
+    - "CANCELLATION INVOICE"
+  suppress_c4: true
+
+input_dir: invoices/evident
+output_dir: databases
+db_filename: invoices_evident.db
+
+pdf_dpi: 100
+max_tokens: 4096
+
+extraction_prompt: |
+  You are an invoice extraction engine. You are processing Page 1 of an invoice from Evident Europe GmbH.
+  Extract all available fields into the JSON schema provided below.
+
+  SUPPLIER SPECIFIC RULES:
+  - Seller Entities: Look for "Evident Europe GmbH - UK Branch", "Evident Europe GmbH – UK Branch", or "Evident Impact Ltd".
+  - Address Layouts:
+    * Two columns: Bill address (left) | Ship to address (right).
+    * Single column: Seller details at top, then Bill To section below.
+    * Four quadrants: Bill address (top left), Payer address (top right), Sold to address (bottom left), Ship to address (bottom right).
+    * Labels to look for: "Bill address:", "Ship to address:", "Bill To:", "Payer address:", "Sold to address:".
+    * CRITICAL: If "Payer address" is present, map it to the "payer" field in the JSON.
+  - Document Types: Identify if "CREDIT NOTE", "INVOICE", "INVOICE / TAX DOCUMENT", or "PROFORMA".
+  - Invoice Number Formats:
+    * 10-digit number starting with 90 (e.g., 9040xxxxxx).
+    * 10-digit number starting with 88.
+    * Two-letter prefix followed by hyphen and three-digit number (e.g., EI-001).
+  - Date Formats:
+    * CRITICAL: Evident uses DD.MM.YYYY format. You MUST parse the first number as the DAY and the second as the MONTH.
+    * Example: "06.11.2025" is 6th November 2025 -> "2025-11-06".
+    * Example: "30.05.2025" is 30th May 2025 -> "2025-05-30".
+    * Do NOT swap day and month. Convert "DD Month YYYY" (e.g., "24 November 2025") to "YYYY-MM-DD".
+  - Currency: Extract ISO code (e.g., GBP, EUR). If symbol "£" is used, map to "GBP".
+  - Line Items:
+    * Standard Layout: Columns may be ['Pos', 'Item no.', 'Order qty', 'Del. qty', 'Backorder', 'Unit price', 'Line amount'].
+      - Map 'Pos' -> position
+      - Map 'Item no.' -> article
+      - PRIORITY: Use 'Del. qty' for quantity. If 'Del. qty' is missing, use 'Order qty'.
+      - Map 'Unit price' -> unit_price
+      - CRITICAL: The 'total_price' field MUST be the NET amount (the value in the "Line amount" column).
+      - DO NOT calculate total_price as unit_price * quantity if a "Line amount" column exists. Always prefer the explicit "Line amount" value.
+      - If a line item shows a gross amount and a separate negative discount amount (e.g., "Line Discount"), the "Line amount" column usually already reflects the net. If the "Line amount" is missing, calculate: (unit_price * quantity) + discount_amount.
+      - Example: Gross 300.00, Discount -105.00, Line Amount 195.00 -> total_price = 195.00.
+      - Example: Gross 16458.00, Discount -100% (-16458.00), Line Amount 0.00 -> total_price = 0.00.
+      - Map the calculated NET amount to 'total_price'.
+      - Extract description from the main text column or item description area.
+    * Special Layout (88-prefix / "INVOICE / TAX DOCUMENT"): Columns may be ['Pos', 'VAT code', 'Information/Article/Expenditure', 'Qty', 'U/M', 'VAT', 'Line amount'].
+      - Map 'Pos' -> position
+      - Map 'Information/Article/Expenditure' -> description (include article if separate)
+      - Map 'Qty' -> quantity
+      - Map 'U/M' -> unit
+      - Map 'Line amount' -> total_price (Ensure this is the net amount).
+      - If unit_price is missing, calculate as total_price / quantity if possible, else null.
+    * Simple Service Layout (Evident Impact Ltd): May lack quantity/unit columns.
+      - Extract description from the main text column.
+      - Set quantity to 1 if not specified.
+      - Extract total_price from the amount column (ensure it is net).
+    * Note: Serial numbers may be embedded in descriptions (e.g., "Serial no.: 9L48898").
+    * Note: Export Control Classification and Country of Origin may be in descriptions.
+    * Note: Delivery note numbers may be embedded in line items.
+    * CRITICAL: Do NOT extract metadata rows (e.g., "Model: ...", "Charge-/Serialno.: ...") as line items. Only extract rows that have a valid Position number and a monetary amount.
+  - Discounts:
+    * Look for "Line Discount" as a separate row with negative amount.
+    * Look for "Percentage Discount" below item row with negative amount.
+    * CRITICAL: The 'subtotal' field in the JSON must be the SUM of the NET 'total_price' of all line items (i.e., after line-level discounts are applied).
+    * 'discount_amount' in the 'totals' object should ONLY capture invoice-level discounts (if any) that are NOT already reflected in the line item totals.
+    * If all discounts are line-level (subtracted from line items), 'discount_amount' MUST be null.
+    * CRITICAL: If a discount amount appears to be negative in the source text (e.g., "-135.45"), store it as a positive number in the JSON (135.45) ONLY if it is an invoice-level discount. If it is a line-level discount, do not store it in 'discount_amount'.
+    * CRITICAL: If a discount rate is extracted as 100% or implausible values, verify against the line items. If the line items already reflect the discount (net = 0), set 'discount_amount' to null and 'discount_rate_percent' to null. Do not hallucinate a 100% discount at the invoice level.
+    * discount_amount must be a positive number in the final JSON.
+  - Totals:
+    * subtotal = sum of ALL line item NET total_prices across ALL pages.
+    * total = grand total from the FINAL summary section after VAT.
+    * Look for "Net value", "Output Tax", "VAT", "TOTAL".
+    * VAT rates may be 0.00% for certain items (export).
+    * CRITICAL ARITHMETIC: Ensure subtotal (net) - invoice_discount + freight + vat_amount = total.
+  - Payment Terms: Look for "Due within 30 days", "DAP Cambridge", "Terms of delivery".
+  - Subscription Period: Look for "Plan 5yr", "Field repair/Tax Exempted 2026 (13.03.2026 - 12.03.2027)".
+  - Bank Details: Look for bank name, sort code, account number, IBAN, SWIFT.
+    * Note: Evident Impact Ltd may use "Tide Bank" with sort code format "XX-XX-XX".
+  - References: Look for and extract the following into the `references` object:
+    * "Our order no." -> order_reference
+    * "Your order no." -> order_reference
+    * "Your reference" -> your_reference
+    * "Quotation no." -> quotation_number
+    * "Contract number" -> contract_number
+    * "Contract type" -> notes (or contract_number if type is numeric/ID)
+    * "Contract amount" -> notes
+    * "Delivery note no." -> delivery_note
+    * "Your order date" -> order_date
+    * "Delivery date" -> order_date
+    * "Our contact" -> sales_person
+    * "Your VAT reg. no." -> notes (or buyer.vat_number if applicable)
+    * "Reference" -> your_reference
+  - Notes: Look for "Export Control Classification", "Russia embargo warning", "EAR99 goods disclaimer", "CISG exclusion".
+
+  BUYER NAME NORMALIZATION (CRITICAL):
+  1. Hyphen Split: If the buyer name contains a hyphen or dash separating the organization and department (e.g., "UNIVERSITY OF CAMBRIDGE - DEPT OF PATHOLOGY" or "University of Cambridge - Shared Service Medicine"):
+     - Set "buyer.name" to the part BEFORE the hyphen/dash (trimmed).
+     - Set "buyer.department" to the part AFTER the hyphen/dash (trimmed).
+  2. "Department of" Split: If the buyer name is "University of Cambridge Department of Medicine" (no hyphen):
+     - Set "buyer.name" to "University of Cambridge".
+     - Set "buyer.department" to "Department of Medicine".
+  3. Sainsbury Laboratory: If the buyer name is "Sainsbury Laboratory" and context indicates "University of Cambridge":
+     - Set "buyer.name" to "University of Cambridge".
+     - Set "buyer.department" to "Sainsbury Laboratory".
+  4. CRUK Cambridge Institute: If the buyer name is "CRUK Cambridge Institute":
+     - Set "buyer.name" to "University of Cambridge".
+     - Set "buyer.department" to "CRUK Cambridge Institute".
+  5. Do not extract individual contact names (e.g., "Otto GEISSLER") into "buyer.name" or "sold_to.name". If a person's name appears where an organization is expected, leave the field null or move to "references.sales_person" if context suggests a contact.
+
+  ARITHMETIC CHECK (MANDATORY):
+  1. Calculate sum of all line item 'total_price' (which must be net values). This is 'subtotal'.
+  2. Verify: subtotal - discount_amount + freight + vat_amount ≈ total.
+  3. If the printed 'total' differs from this calculation, prioritize the printed 'total' and adjust 'vat_amount' or 'discount_amount' to balance, ensuring 'subtotal' remains the sum of the net line items.
+  4. If line items show gross amounts with separate discounts, you MUST subtract the discount from the line item before summing for 'subtotal'.
+  5. If a discount is found that contradicts the line item totals (e.g., line items are already net, but a large discount is listed separately), set 'discount_amount' to null to avoid double-counting.
+
+  OUTPUT FORMAT:
+  Return ONLY valid JSON. No markdown, no explanation.
+  Use JSON null for any field not present on the page.
+
+  JSON TEMPLATE:
+  {
+    "document_type": null,
+    "invoice_number": null,
+    "invoice_date": null,
+    "currency": null,
+    "seller": {
+      "name": null,
+      "address": null,
+      "vat_number": null,
+      "registration_number": null,
+      "phone": null,
+      "website": null
+    },
+    "buyer": {
+      "name": null,
+      "department": null,
+      "address": null,
+      "customer_number": null
+    },
+    "payer": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "ship_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "sold_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "references": {
+      "your_reference": null,
+      "order_reference": null,
+      "order_date": null,
+      "order_confirmation": null,
+      "sales_person": null,
+      "coordinator": null,
+      "delivery_note": null,
+      "delivery_date": null,
+      "contract_number": null,
+      "quotation_number": null
+    },
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "subscription_period": {
+      "start": null,
+      "end": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }
+
+continuation_prompt: |
+  You are processing Page N (N > 1) of an invoice from Evident Europe GmbH.
+  Extract additional line items and final totals.
+
+  SUPPLIER SPECIFIC RULES:
+  - Line Items: Append to the list from previous pages.
+    * Standard Layout: Use 'Del. qty' for quantity if available, otherwise 'Order qty'.
+    * Special Layout (88-prefix): Map 'Pos', 'Information/Article/Expenditure', 'Qty', 'U/M', 'Line amount' as described in extraction_prompt.
+    * Simple Service Layout: Handle missing quantity/unit columns as described in extraction_prompt.
+    * CRITICAL: The 'total_price' field MUST be the NET amount (the value in the "Line amount" column).
+    * DO NOT calculate total_price as unit_price * quantity if a "Line amount" column exists. Always prefer the explicit "Line amount" value.
+    * If a line item shows a gross amount and a separate negative discount amount, the "Line amount" column usually already reflects the net. If the "Line amount" is missing, calculate: (unit_price * quantity) + discount_amount.
+    * Note: Serial numbers may be embedded in descriptions.
+    * Note: Export Control Classification and Country of Origin may be in descriptions.
+    * CRITICAL: Do NOT extract metadata rows (e.g., "Model: ...", "Charge-/Serialno.: ...") as line items. Only extract rows that have a valid Position number and a monetary amount.
+  - Totals:
+    * subtotal = sum of ALL line item NET total_prices across ALL pages.
+    * total = grand total from the FINAL summary section after VAT.
+    * Look for "Net value", "Output Tax", "VAT", "TOTAL".
+    * VAT rates may be 0.00% for certain items.
+  - Payment Terms: Look for "Due within 30 days", "DAP Cambridge".
+  - Notes: Look for "Export Control Classification", "Russia embargo warning", "EAR99 goods disclaimer".
+  - Bank Details: Look for bank name, sort code, account number, IBAN, SWIFT.
+
+  ARITHMETIC CHECK (MANDATORY):
+  1. Recalculate subtotal as the sum of all line items (including those from previous pages) using their NET 'total_price'.
+  2. Verify: subtotal - discount_amount + freight + vat_amount ≈ total.
+  3. If imbalance exists, adjust 'vat_amount' or 'discount_amount' to match the printed 'total', ensuring 'subtotal' remains the sum of net line items.
+  4. If a discount is found that contradicts the line item totals (e.g., line items are already net, but a large discount is listed separately), set 'discount_amount' to null to avoid double-counting.
+
+  OUTPUT FORMAT:
+  Return ONLY valid JSON. No markdown, no explanation.
+  Use JSON null for any field not present on the page.
+
+  JSON TEMPLATE (CONTINUATION):
+  {
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "subscription_period": {
+      "start": null,
+      "end": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }
+

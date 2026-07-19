@@ -1,0 +1,367 @@
+supplier: sartorius
+dedup_key: invoice_number
+
+dashboard:
+  display_name: "Sartorius UK Limited"
+  color: "#A855F7"
+  payer_fallback_keywords:
+  - "University of Cambridge"
+  - "Finance Division"
+  - "Department of Biochemistry"
+  - "Biopath Stores"
+  - "Biochemistry Stores"
+  negative_document_types: []
+  # Canonical document_type values Sartorius legitimately emits. Read by
+  # the invoicing audit (D9).
+  document_types:
+  - "Invoice"
+  - "Credit Note"
+  - "Credit Memo"
+  - "Delivery Note"
+  - "Debit Memo"
+
+input_dir: invoices/sartorius
+output_dir: databases
+db_filename: invoices_sartorius.db
+
+pdf_dpi: 150
+max_tokens: 4096
+
+extraction_prompt: |2
+
+    SARTORIUS POSTAGE — MANDATORY (PROMOTED FROM G9):
+    Sartorius invoices almost always have one OR MORE postage / freight charges. On EVERY invoice, look in the totals block (between Subtotal and Total) for these labels:
+      * "Log. Chrg. Value Fix"        (standard postage — most common ~70% of invoices)
+      * "Add. Temp. Log. Chrg"        (temperature-controlled extra — extra ~£27 on cold-chain shipments)
+      * "Total Shipping and Handling" (the SUM of all postage rows when multiple are present)
+      * "Postage and Packaging"
+      * "Postage"
+      * "Freight"
+      * "Carriage"
+    CAPTURE RULE (handle multiple postage rows correctly):
+      - If "Total Shipping and Handling" is present, set `totals.freight` to that single value. It is the sum of all individual postage rows, so do NOT also add them.
+      - If "Total Shipping and Handling" is NOT present but multiple individual postage rows exist (e.g. "Log. Chrg. Value Fix" £28 + "Add. Temp. Log. Chrg" £27), SUM them and set `totals.freight` to the sum (£55 in that example).
+      - If only one individual postage row exists, set `totals.freight` to that value.
+      - If no postage row is visible, leave `totals.freight = null`.
+    Typical Sartorius postage values per row: £7, £10, £15, £20, £27, £28. Combined values often £55 (£27 + £28).
+    Do NOT include any postage row as a line item.
+    The arithmetic check  subtotal + freight + vat ≈ total  MUST balance. If it does not, the postage row(s) were missed — re-scan the totals block before outputting.
+
+  You are an expert invoice extraction AI. You are processing Page 1 of a Sartorius invoice.
+  Extract all fields into the JSON schema provided below.
+
+  CRITICAL RULES:
+  1. Return ONLY valid JSON. No markdown, no explanation, no text outside the JSON.
+  2. Use JSON null for any field not present on this page.
+  3. Dates must be converted to YYYY-MM-DD format.
+  4. Monetary values must be plain numbers (no currency symbols, no commas).
+  5. discount_amount MUST always be null for Sartorius invoices. Per-item discounts are
+     captured in line_discount_amount on each line item and are already embedded in the
+     net prices. Do NOT populate the global discount_amount field.
+  6. subtotal = "Net Value for Item" from the INVOICE SUMMARY BLOCK — the post-discount
+     net total of all commercial line items. Do NOT use "Gross Value" or "List Price" totals.
+     If the summary section is not on this page, set subtotal to null.
+  7. total = "Total Amount" or "Net Value" from the FINAL summary block (usually last page).
+     If not on this page, set to null.
+  8. Arithmetic Check (SARTORIUS): The correct formula is subtotal + freight + vat_amount ≈ total.
+     Discount is already embedded in subtotal — do NOT subtract it. If values are inconsistent,
+     prioritise the explicit "Total Amount" field for 'total'.
+  9. VAT Zero Handling: If VAT is displayed as "0.00", "0.00 GBP", or "0%", set vat_amount to 0 and vat_rate_percent to 0. Do not use null.
+  10. DOCUMENT TYPE FILTER: 
+      - If the document header contains "Delivery Note", "Packing List", or "Delivery", set document_type to "delivery_note" and return null for all monetary fields.
+      - If the document header contains "Credit memo", "Credit Note", "Reversed Bill.Doc.", or "Cancelled billing doc.", set document_type to "credit note". 
+        For credit notes:
+        a) Tolerate descriptions that are ONLY batch numbers or country of origin (do not skip these rows).
+        b) DO NOT apply customs/duplicate filtering (S1) to credit notes.
+        c) Accept line-level discounts where unit_price != total_price as valid.
+        d) Extract line items normally; ensure 'total' and 'subtotal' reflect the credit amount (positive values).
+        e) CRITICAL: Credit memos often have different column structures. Look for "Reversed Bill.Doc." to confirm.
+      - If the document header contains "Invoice", set document_type to "invoice".
+    MANDATORY POSTAGE SELF-CHECK (Sartorius — apply at the end of arithmetic check):
+    - Verify: subtotal + freight + vat_amount == total_amount (within £0.50).
+    - If the gap is between £7 and £28 (the typical Sartorius postage range), or matches a multiple of £5, RE-SCAN the totals block for "Log. Chrg.", "Postage", "Carriage", or "Freight" and populate freight from it.
+    - Only emit freight = null after confirming there is no such row in the totals block.
+
+
+  SUPPLIER-SPECIFIC LAYOUT INSTRUCTIONS (Sartorius):
+  - Document Types: Look for "Invoice", "Credit memo", "Delivery Note".
+  - Invoice Number: Look for 10-digit numbers starting with '91', '9113', '21', or '911309'.
+  - Seller Entities: Recognize "Sartorius UK Limited" and "Sartorius Stedim UK Limited".
+  - Addresses:
+    * The layout varies: Look for "Bill To", "Ship-to address", "Sold-to address", "Importer of Record".
+    * "Bill To" is usually the Buyer.
+    * "Ship-to address" is the delivery location.
+    * "Sold-to address" is the billing entity (often the University of Cambridge Finance Division).
+    * "Importer of Record" is a specific field often found on the left side.
+  - Line Items (CRITICAL - FIX FOR MISSING PRICES & DUPLICATES):
+    * Extract EVERY row in the commercial table. DO NOT merge or deduplicate rows with identical descriptions unless they are clearly a header/continuation pair.
+    * PRICE ASSOCIATION RULE: Every row in the item table MUST have a price. If a description spans multiple visual lines (e.g., due to serial numbers, batch IDs, or long text), the price column value on the same logical row (or the nearest non-blank value in the price column immediately following the description block) MUST be assigned to that item.
+    * DUPLICATE HANDLING: If two rows have identical or near-identical descriptions (e.g., "Octet GST Biosensors" and "Anti-GST Biosensors" with same price), treat them as SEPARATE line items. Do not auto-deduplicate based on name alone.
+    * ARTICLE CODE ROWS: If a row's description is ONLY an article/material number (e.g., "2508013911", "2508012811" — pure alphanumeric with no descriptive words), do NOT extract it as a separate line item. Use the code as the `article` field of the NEXT row instead.
+    * STOP ADDING TO line_items when you encounter rows that are part of the customs/export declaration: "Gross Value", "Net Value for Item", "Item Detail" as a row header, country names (e.g., "Peop. Rep. of China"), or short ALL-CAPS customs codes. IMPORTANT: after stopping line item extraction, ALWAYS continue reading the page to extract the TOTALS SECTION (subtotal, discount, VAT, total).
+    * Do NOT extract the "Customs/export declaration" table.
+    * Extract "Material Number", "Serial Number", "Batch no.", "Country of Origin" into the 'description' field if not in a separate column.
+    * "Log. Chrg. Value Fix" or "Postage and Packaging" is a delivery charge (freight).
+    * PRICING LOGIC (GROSS vs NET):
+      * Sartorius invoices often show a "List Price" (Catalogue) and a "Net Price" (Contract).
+      * CRITICAL: You must extract the NET price (the final price after discount) as `unit_price` and `total_price`.
+      * Do NOT use the List/Catalogue price for `unit_price`.
+      * If a line shows "Gross Value" (List) and "Net Value" (Contract):
+        1. Set `unit_price` = Net Value / Quantity.
+        2. Set `total_price` = Net Value.
+        3. Calculate `line_discount_amount` = (Gross Value - Net Value). Store on this item only.
+        Do NOT add to the global discount_amount (which must remain null).
+      * If a line shows a specific discount percentage (e.g., "Contract discount 25%"):
+        1. Identify the Net Unit Price column (often labeled "Net Unit Price" or the rightmost price column).
+        2. Set `unit_price` = Net Unit Price.
+        3. Set `total_price` = Net Unit Price * Quantity.
+        4. Calculate `line_discount_amount` = (List Unit Price - Net Unit Price) * Quantity. Store on this item only.
+        Do NOT add to the global discount_amount (which must remain null).
+      * If the table only shows one price column, assume it is the Net Price.
+    * CONTINUATION ROW HANDLING (CRITICAL - FIX FOR MISSING PRICES):
+      * If a line item description wraps to a second line (common for long descriptions or batch numbers), the price might appear on the continuation line or be misaligned.
+      * ASSOCIATION RULE: Always associate a price/total value with the NEAREST PRECEDING item description block. Do NOT bind a price to the next item if the current item's price is missing.
+      * If `total_price` is null for a row, look ahead to the next non-blank value in the price column immediately following the description block and assign it to the current item.
+      * If a short single-description line (e.g., "European Power Kit") follows a multi-line item, ensure its price is captured even if it appears in a different column alignment.
+      * Do not skip items because the price seems to be on a different visual line; associate the price with the most recent item description.
+      * Case-insensitive matching: Product names like "INCUCYTE SPHEROID" (all-caps) must be matched to the item description regardless of case.
+    * ROW ALIGNMENT VALIDATION (FIX FOR PATTERN 6):
+      * After extracting all line items, perform a consistency check:
+      * If any `unit_price` value exactly matches the `total_price` of a different line item, flag this as a potential alignment error.
+      * In such cases, re-evaluate the row: The value in the `unit_price` column might actually be the `total_price` for that row, and the actual `unit_price` might be missing or shifted.
+      * If the `total_price` is missing but `unit_price` matches another item's total, assume the `unit_price` value is actually the `total_price` for the current row, and set `unit_price` to null (or recalculate if quantity is known).
+  - Discounts:
+    * discount_amount MUST be null. Do not populate it.
+    * Per-item discounts ("(S) Discount", "Contract discount") go into line_discount_amount on each item only.
+    * "Sales deal discount" maps to discount_2 only if it appears as an invoice-level line in the totals block (rare); otherwise null.
+    * Ensure `total_price` reflects the NET price after any per-item discount.
+  - Totals:
+    * Anchor the 'subtotal' field extraction to the INVOICE SUMMARY BLOCK (typically labelled "Net Amount", "Subtotal", or near the VAT/Total section at the bottom).
+    * DO NOT use values from the line item table or the customs section for 'subtotal'.
+    * DO NOT use "Gross Value" subtotals or "List Price" subtotals.
+    * Look for "Net Value", "VAT", "Total Amount".
+    * The totals section often uses columns: "Price Type", "Value", "RU", "per", "Basic", "Invoice value".
+    * VAT rate might be explicit or calculated.
+    * CROSS-VALIDATION (FIX FOR SUBTOTAL ERROR):
+      * If the extracted 'subtotal' is significantly smaller than 'total_amount' (e.g., subtotal * 5 < total_amount), the extracted subtotal is likely a line item price.
+      * In this case, IGNORE the extracted subtotal and re-extract from the footer/summary region.
+      * If the document is multi-page and the summary is not on Page 1, set subtotal to null.
+    * SUBTOTAL ADJUSTMENT (FIX FOR G4+S1 DIVERGENCE):
+      * If you detect that customs rows (e.g., "Peop. Rep. of China", "Export Declaration") were removed in the previous step, reduce the running subtotal by the sum of those removed values.
+      * Ensure the final subtotal only includes commercial line items.
+    * EMBEDDED FREIGHT HANDLING (FIX FOR G9):
+      * If the invoice shows "Log. Chrg. Value Fix" or "Postage and Packaging" within the line item table or immediately adjacent to the subtotal, and the subtotal value equals (Sum of Item Totals + Freight), then the freight is EMBEDDED in the subtotal.
+      * In this case, set `freight` to the extracted freight value, but set `subtotal` to (Extracted Subtotal - Freight) to ensure the arithmetic check (subtotal + freight + vat = total) holds true.
+      * If the subtotal is clearly the sum of items only, do not adjust.
+  - References:
+    * "Purchase order no." or "Order no." -> order_reference.
+    * "Order date" or "Date of delivery" -> order_date.
+    * "Delivery Number" -> your_reference.
+    * "Your Tax Number" -> notes (buyer's VAT registration — do NOT map to your_reference).
+    * "Inhouse Contact" -> coordinator.
+    * "Reversed Bill.Doc." -> order_confirmation.
+    * "Customer no." -> buyer.customer_number.
+    * "Model" or "Serial no." in the header area (not inside a line-item row) -> notes.
+  - Bank Details:
+    * Look for HSBC, Sort Code, Account Number, IBAN, SWIFT.
+    * Bank details may be repeated on multiple pages.
+    * CRITICAL: If both GBP and EUR accounts are present, ALWAYS prefer the GBP account details (matching the invoice currency). Ignore the EUR account.
+    * Sartorius UK Limited GBP account: Sort Code 40-20-24, Account 51496719.
+    * Sartorius Stedim UK Limited GBP account: Sort Code 40-12-78, Account 41622242.
+      Extract whichever set appears on the invoice — do not mix them.
+  - Notes:
+    * Look for "Repeat Printout", "Terms and Conditions", "Incoterms 2020", "Tariff Surcharge".
+    * Extract any legal text or specific instructions.
+  - Handling Charges:
+    * handling_charges MUST always be null for Sartorius invoices.
+    * "Log. Chrg. Value Fix" and "Postage and Packaging" map ONLY to `freight`. Never put these in handling_charges.
+  - Subscription Period:
+    * "Services rendered" often contains a date range (e.g., "01 Jan 2023 - 31 Dec 2023"). Parse this into subscription_period.start and subscription_period.end.
+  - Service Invoices:
+    * For service contracts, locate the post-discount "Amount Due" or "Total Payable" line for the 'total' field, not the gross subtotal.
+  - PDF VALIDATION & FALLBACK (FIX FOR ISSUE 5):
+    * If the primary PDF parse returns "No valid PDF pages found" or similar error:
+      1. Set `document_type` to "unknown".
+      2. Set `extraction_confidence` to "low".
+      3. Set ALL monetary fields (subtotal, total, line_items, etc.) to null.
+      4. Set `notes` to "PDF extraction failed: No valid pages found. Manual review required."
+      5. DO NOT attempt to extract partial data from corrupted pages.
+    * If the PDF is valid but text extraction is garbled (e.g., random characters, missing columns):
+      1. Set `extraction_confidence` to "low".
+      2. Extract only clearly visible fields (Invoice Number, Date, Seller Name).
+      3. Set all complex fields (line_items, totals) to null.
+      4. Add "Text extraction garbled; manual review required" to `notes`.
+
+  JSON SCHEMA TO FILL:
+  {
+    "document_type": null,
+    "invoice_number": null,
+    "invoice_date": null,
+    "currency": null,
+    "seller": {
+      "name": null,
+      "address": null,
+      "vat_number": null,
+      "registration_number": null,
+      "phone": null,
+      "website": null
+    },
+    "buyer": {
+      "name": null,
+      "department": null,
+      "address": null,
+      "customer_number": null
+    },
+    "ship_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "sold_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "references": {
+      "your_reference": null,
+      "order_reference": null,
+      "order_date": null,
+      "order_confirmation": null,
+      "sales_person": null,
+      "coordinator": null
+    },
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null,
+        "line_discount_amount": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "subscription_period": {
+      "start": null,
+      "end": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }
+
+continuation_prompt: |2
+
+    SARTORIUS POSTAGE — MANDATORY (PROMOTED FROM G9):
+    Sartorius invoices almost always have one OR MORE postage / freight charges. On EVERY invoice, look in the totals block (between Subtotal and Total) for these labels:
+      * "Log. Chrg. Value Fix"        (standard postage — most common ~70% of invoices)
+      * "Add. Temp. Log. Chrg"        (temperature-controlled extra — extra ~£27 on cold-chain shipments)
+      * "Total Shipping and Handling" (the SUM of all postage rows when multiple are present)
+      * "Postage and Packaging"
+      * "Postage"
+      * "Freight"
+      * "Carriage"
+    CAPTURE RULE (handle multiple postage rows correctly):
+      - If "Total Shipping and Handling" is present, set `totals.freight` to that single value. It is the sum of all individual postage rows, so do NOT also add them.
+      - If "Total Shipping and Handling" is NOT present but multiple individual postage rows exist (e.g. "Log. Chrg. Value Fix" £28 + "Add. Temp. Log. Chrg" £27), SUM them and set `totals.freight` to the sum (£55 in that example).
+      - If only one individual postage row exists, set `totals.freight` to that value.
+      - If no postage row is visible, leave `totals.freight = null`.
+    Typical Sartorius postage values per row: £7, £10, £15, £20, £27, £28. Combined values often £55 (£27 + £28).
+    Do NOT include any postage row as a line item.
+    The arithmetic check  subtotal + freight + vat ≈ total  MUST balance. If it does not, the postage row(s) were missed — re-scan the totals block before outputting.
+
+  You are an expert invoice extraction AI. You are processing Page N (N > 1) of a Sartorius invoice.
+  This page contains additional line items and/or the final totals section.
+  Extract the relevant fields and merge them with the previous page's data.
+
+  CRITICAL RULES:
+  1. Return ONLY valid JSON. No markdown, no explanation.
+  2. Use JSON null for any field not present on this page.
+  3. Dates must be converted to YYYY-MM-DD format.
+  4. Monetary values must be plain numbers.
+  5. discount_amount MUST be null. Per-item discounts go in line_discount_amount on each item only.
+  6. subtotal = "Net Value for Item" from the SUMMARY BLOCK — the post-discount net total.
+     Do NOT compute it as the sum of line items and do NOT use "Net Value" (which includes freight).
+  7. total = "Total Amount" from the FINAL summary block. This page likely contains it.
+  8. Arithmetic Check (SARTORIUS): subtotal + freight + vat_amount ≈ total.
+     Discount is embedded in subtotal — do NOT subtract it.
+  9. VAT Zero Handling: If VAT is displayed as "0.00", "0.00 GBP", or "0%", set vat_amount to 0 and vat_rate_percent to 0.
+  10. FREIGHT HANDLING: If "Log. Chrg. Value Fix" or "Postage and Packaging" appears on
+      this page, map its value to `freight` ONLY. NEVER set handling_charges — it must be null.
+  11. discount_amount MUST be null. Per-item discounts go in line_discount_amount on each item.
+      Do NOT populate the global discount_amount.
+  12. handling_charges MUST be null.
+  13. TOTALS BLOCK (Sartorius format): The summary block on the last page looks like:
+        Price Type           UOM    Base    Value
+        Net Value for Item   GBP           XXX.XX   ← set as subtotal
+        Log. Chrg. Value Fix                XX.XX   ← set as freight (if present)
+        Net Value            GBP           XXX.XX   ← grand total (subtotal + freight)
+        Total Amount         GBP           XXX.XX   ← use this for 'total' (preferred)
+      subtotal = "Net Value for Item" value.
+      freight  = "Log. Chrg. Value Fix" value (or null if absent).
+      total    = "Total Amount" value.
+      The "Net Value" row equals subtotal + freight — do NOT use it as subtotal.
+  14. Arithmetic check: subtotal + freight + vat_amount ≈ total. Discount is embedded in
+      subtotal and must NOT be subtracted.
+    MANDATORY POSTAGE SELF-CHECK (Sartorius — apply at the end of arithmetic check):
+    - Verify: subtotal + freight + vat_amount == total_amount (within £0.50).
+    - If the gap is between £7 and £28 (the typical Sartorius postage range), or matches a multiple of £5, RE-SCAN the totals block for "Log. Chrg.", "Postage", "Carriage", or "Freight" and populate freight from it.
+    - Only emit freight = null after confirming there is no such row in the totals block.
+
+
+  SARTORIUS CONTINUATION PAGE — JSON SCHEMA:
+  {
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null,
+        "line_discount_amount": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "subscription_period": {
+      "start": null,
+      "end": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }

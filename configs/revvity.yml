@@ -1,0 +1,312 @@
+supplier: revvity
+dedup_key: invoice_number
+currency_default: "GBP"
+
+dashboard:
+  display_name: "Revvity"
+  color: "#6DBE4E"
+  c4_item_tolerance: 0.30
+  payer_fallback_keywords:
+  - "Finance"
+  - "Accounts"
+  - "Billing"
+  - "University of Cambridge Finance"
+  - "Central Finance"
+  negative_document_types:
+  - "CREDIT NOTE"
+  - "Credit Note"
+  - "Credit Memo"
+  - "Cancellation Invoice"
+  # Canonical document_type values this supplier legitimately emits. Read by
+  # the invoicing audit (D9). If absent, D9 is skipped for the supplier.
+  document_types:
+  - "Invoice"
+  - "Credit Note"
+  - "Credit Memo"
+  - "Cancellation Invoice"
+
+input_dir: invoices/revvity
+output_dir: databases
+db_filename: invoices_revvity.db
+
+pdf_dpi: 100
+max_tokens: 4096
+
+# Correction thresholds based on review feedback
+correction_thresholds:
+  # C4: Suppress false positives for valid trade discounts (5%, 10%, 15%, etc.)
+  # Only flag if discount > 30%
+  item_discount_tolerance_percent: 30.0
+  # C3: If single-item invoice total diverges from subtotal by >30%, trust subtotal
+  single_item_subtotal_divergence_percent: 30.0
+  # G1: If total is 0 or null, derive from sum of line items + VAT + freight
+  zero_total_reconstruction_enabled: true
+  # G2: If a line item has null/empty description and total_price matches document subtotal, discard it
+  ghost_line_item_removal_enabled: true
+
+# Post-extraction logic configuration to ensure robustness beyond prompt instructions
+post_processing:
+  # C1: Reconstruct total if extracted total is 0, null, or negative
+  reconstruct_total_on_zero: true
+  # C3+C4: Enforce single-item divergence correction programmatically
+  enforce_single_item_divergence: true
+  # 173: Enforce ghost row removal programmatically
+  enforce_ghost_row_removal: true
+  # C5: Database cleanup strategy for existing duplicates
+  # Note: This config flag indicates the need for a one-time DB migration script.
+  # The pipeline will use 'dedup_key' to prevent future duplicates.
+  # Existing duplicates (ids 7 & 8) require manual DB cleanup or a migration script.
+  cleanup_existing_duplicates: true
+
+extraction_prompt: |
+  You are an invoice extraction engine. You are processing Page 1 of a Revvity (or PerkinElmer) invoice.
+  Extract all fields according to the schema below.
+
+  CRITICAL RULES:
+  1.
+
+    TOTALS-BLOCK DELIVERY CHARGES (Revvity-specific, MANDATORY):
+    - On many Revvity invoices, a delivery / shipping / handling charge appears between the Subtotal row and the Total row in the totals SUMMARY block (NOT as a line item in the products table).
+    - Common labels in the totals block: "Delivery Charge", "Delivery", "Shipping fee", "Postage", "Handling".
+    - When such a row is present in the totals area, extract its value to `totals.freight`. Do NOT also add it to line_items[] (it is not a line item).
+    - Typical values: £20–£200. Common: £52, £87, £89, £124.
+    - The arithmetic check `subtotal - discount + freight + vat ≈ total` MUST balance. If the gap matches a typical delivery-charge value (£20–£200), re-scan the totals area for a delivery row before emitting freight = null.
+    - DO NOT double-count: if the same shipping appears as a LINE ITEM (e.g. "SV - STANDARD SHIPPING CHARGE" with an article code in the products table), capture it as a line item and leave totals.freight = null. Use freight only for the totals-block adjustment row.
+
+  Return ONLY valid JSON. No markdown, no explanations.
+  2. Use JSON null for any field not present on this page.
+  3. All dates must be converted to YYYY-MM-DD format.
+  4. All monetary values must be plain numbers (no currency symbols, no commas).
+  5. discount_amount must always be a positive number.
+  6. subtotal = sum of ALL line item total_prices across ALL pages BEFORE discounts. (For Page 1, calculate the sum of visible line items, but be aware Page 2 may add more).
+  7. total = grand total from the FINAL summary section (usually on the last page, but if present here, note it).
+  8. ARITHMETIC & RECONSTRUCTION LOGIC:
+     - If the extracted 'total' is 0, null, or missing, calculate it as: sum(line_items.total_price) + vat_amount + freight.
+     - If a single line item exists and its 'total_price' diverges from the document's 'subtotal' by more than 30%, replace the line item's 'total_price' with the document's 'subtotal'.
+     - If a line item has a null or empty 'description' AND its 'total_price' equals the document's 'subtotal' (or 'total'), DISCARD this line item (it is a ghost row).
+  9. CURRENCY: If no currency is explicitly visible on this page, assume "GBP" (default for Revvity UK).
+
+  SUPPLIER-SPECIFIC LAYOUT INSTRUCTIONS (Revvity):
+  - SELLER: Look for "Revvity (UK) Ltd", "Revvity", "PerkinElmer AES (UK) Limited", "Revvity signals", "revvity signals".
+  - BUYER: Look for "Invoice Mailing address", "Mailing address:", "Bill To", "Invoice to". Note: "Customer Account Number" and "Customer VAT Registration Number" are often here.
+  - SHIP TO: Look for "Ship To", "Ship-to", "Ultimate Destination".
+  - RETURNED FROM (Credit Notes): If the document is a Credit Note, the right-side address block may be labeled "Returned From". Map this to `ship_to` if no other ship-to exists, or treat as a specific return address if distinct.
+  - REFERENCES:
+    - Standard: "Our Order Number", "Your Order Number", "O/Order Date", "Order Date", "Quotation Number", "Contract Number", "Sales Rep", "PE Order Number", "PO #", "Sales Order".
+    - Credit Notes: "Our Credit Number", "Credit Date", "Previous Invoice".
+    - Service: "Service Report Number", "Customer Order Number".
+    - Mappings:
+      - "Your Order Number" -> `order_reference`
+      - "Our Order Number" -> `your_reference`
+      - "PO #" -> `order_reference`
+      - "Sales Order" -> `order_reference`
+      - "O/Order Date" OR "Order Date" -> `order_date`
+      - "Quotation Number" -> `order_confirmation`
+      - "Contract Number" -> `order_confirmation` (or `your_reference` if distinct)
+      - "Service Report Number" -> `your_reference`
+      - "Customer Order Number" -> `order_reference`
+      - "Previous Invoice" -> `order_confirmation`
+      - "Sales Rep" -> `sales_person`
+  - LINE ITEMS:
+    - Layout A (New Product - Most Common): Columns are `Line No.`, `Qty`, `Part No.`, `Description`, `Unit Price`, `Net Price`, `VAT Code`.
+      - Map `Line No.` -> `position`
+      - Map `Part No.` -> `article`
+      - Map `Qty` -> `quantity`
+      - Map `Description` -> `description`
+      - Map `Unit Price` -> `unit_price` (CRITICAL: If a discount column exists, extract the NET/Discounted unit price, NOT the list price. If the column is labeled 'Unit Price' but values are clearly discounted (e.g. 50% of expected), use the value that matches the line total / quantity).
+      - Map `Net Price` -> `total_price` (This is the line total after discount)
+      - Note: There is NO "Total" column in this layout; use `Net Price` for `total_price`.
+    - Layout B (Service/Contract): Columns are `Line`, `Qty`, `Model`, `Description`, `Gross Price`, `Adjustment`, `Net Price`, `VAT Amount`.
+      - Map `Model` -> `article`
+      - Map `Gross Price` -> `unit_price` (Use Net Price if Gross is list price and Net is available)
+      - Map `Adjustment` -> calculate `discount_amount` (positive value)
+      - Map `Net Price` -> `total_price`
+    - Layout C (Repair/Old Service): Columns are `Line`, `Qty`, `Part No.`, `Description`, `Unit Price`, `[Discount]`, `Net Price`, `VAT Amount`.
+      - Map `Part No.` -> `article`
+      - Map `Unit Price` -> `unit_price` (Prefer Net/Discounted value if available)
+      - Map `Net Price` -> `total_price`
+    - Layout D (Revvity Signals): Columns are `Quantity/QTY`, `Item`, `Start Date`, `End Date`, `VAT Rate`, `Rate`, `Amount`.
+      - Map `Item` -> `description` (or `article` if distinct part number exists, otherwise description)
+      - Map `Rate` -> `unit_price`
+      - Map `Amount` -> `total_price`
+      - Extract `Start Date` and `End Date` for `subscription_period`.
+    - Discounts: May appear as "Contract Discount", "Sales Discount", "Item Discount", "Percentage Discount", "Adjustment".
+      - If a discount is a separate row with a negative amount, include it in `line_items` with a negative `total_price`.
+      - If a discount is a column deduction, calculate the `discount_amount` and apply to the line item or totals.
+    - Look for "Packing Nbr" and "Date" embedded in the Description column.
+    - Look for "Start Line", "End Line", "Commodity", "Country of Origin", "Net Mass" in the footer or summary section of Page 1.
+    - Look for "Blue Ice X" in description.
+    - CRITICAL: Do NOT extract summary rows (like "Subtotal", "Total", "Freight") as line items. If a row has no description or matches a total label, skip it.
+    - GHOST ROW CHECK: If a row has a null/empty description and its total matches the document subtotal, exclude it from line_items.
+  - TOTALS SECTION:
+    - Look for tables with: VAT Code, VAT Rate, Net Amount, VAT Amount.
+    - Look for "Sub Total", "VAT Total", "Total".
+    - Look for "Delivery Charge", "Shipping fee", "SV - STANDARD SHIPPING CHARGE".
+    - For Credit Notes, look for "Total Credit" or "Amount Credit".
+  - BANK DETAILS: Look for "Barclays", "HSBC", "Bank of America", "Sort Code", "Account Number", "IBAN", "SWIFT", "BIC".
+  - NOTES: Look for "WEEE Producer Registration Number", "LockBox payment instruction", "Terms and conditions URL".
+  - SUBSCRIPTION PERIOD:
+    - Look for "Plan Period", "Billing Period", "Start Date", "End Date" in header/footer.
+    - For "Revvity signals" layout, look for "Start Date" and "End Date" columns within line items. If present, aggregate the earliest start and latest end date for the `subscription_period` object.
+
+  OUTPUT SCHEMA (Fill with extracted data, null otherwise):
+  {
+    "document_type": null,
+    "invoice_number": null,
+    "invoice_date": null,
+    "currency": null,
+    "seller": {
+      "name": null,
+      "address": null,
+      "vat_number": null,
+      "registration_number": null,
+      "phone": null,
+      "website": null
+    },
+    "buyer": {
+      "name": null,
+      "department": null,
+      "address": null,
+      "customer_number": null
+    },
+    "ship_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "sold_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "references": {
+      "your_reference": null,
+      "order_reference": null,
+      "order_date": null,
+      "order_confirmation": null,
+      "sales_person": null,
+      "coordinator": null
+    },
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "subscription_period": {
+      "start": null,
+      "end": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }
+
+continuation_prompt: |
+  You are processing Page 2+ of a Revvity invoice.
+  Your task is to extract additional line items and the final totals section.
+  The final totals section on this page will overwrite any totals found on Page 1.
+
+  CRITICAL RULES:
+  1.
+
+    TOTALS-BLOCK DELIVERY CHARGES (Revvity-specific, MANDATORY):
+    - On many Revvity invoices, a delivery / shipping / handling charge appears between the Subtotal row and the Total row in the totals SUMMARY block (NOT as a line item in the products table).
+    - Common labels in the totals block: "Delivery Charge", "Delivery", "Shipping fee", "Postage", "Handling".
+    - When such a row is present in the totals area, extract its value to `totals.freight`. Do NOT also add it to line_items[] (it is not a line item).
+    - Typical values: £20–£200. Common: £52, £87, £89, £124.
+    - The arithmetic check `subtotal - discount + freight + vat ≈ total` MUST balance. If the gap matches a typical delivery-charge value (£20–£200), re-scan the totals area for a delivery row before emitting freight = null.
+    - DO NOT double-count: if the same shipping appears as a LINE ITEM (e.g. "SV - STANDARD SHIPPING CHARGE" with an article code in the products table), capture it as a line item and leave totals.freight = null. Use freight only for the totals-block adjustment row.
+
+  Return ONLY valid JSON. No markdown, no explanations.
+  2. Use JSON null for any field not present on this page.
+  3. All dates must be converted to YYYY-MM-DD format.
+  4. All monetary values must be plain numbers.
+  5. discount_amount must always be a positive number.
+  6. subtotal = sum of ALL line item total_prices across ALL pages BEFORE discounts. (You must add the sum of line items on this page to the previous subtotal if you were tracking it, but here you just output the final calculated subtotal if visible, or the sum of items on this page if the total isn't explicit yet. However, the schema expects the final subtotal. If the final summary is here, use that. If not, sum the items on this page and assume the previous subtotal + this page subtotal = total subtotal).
+  7. total = grand total from the FINAL summary section on this page.
+  8. ARITHMETIC & RECONSTRUCTION LOGIC:
+     - If the extracted 'total' is 0, null, or missing, calculate it as: sum(line_items.total_price) + vat_amount + freight.
+     - If a single line item exists and its 'total_price' diverges from the document's 'subtotal' by more than 30%, replace the line item's 'total_price' with the document's 'subtotal'.
+     - If a line item has a null or empty 'description' AND its 'total_price' equals the document's 'subtotal' (or 'total'), DISCARD this line item (it is a ghost row).
+  9. CURRENCY: If no currency is explicitly visible on this page, assume "GBP" (default for Revvity UK).
+
+  SUPPLIER-SPECIFIC LAYOUT INSTRUCTIONS (Revvity Page 2+):
+  - LINE ITEMS:
+    - Continue appending line items.
+    - Watch for "Packing Specifications" tables (Gross Weight, Net Weight, Dimensions) - these are NOT line items, ignore them for line_items list.
+    - Watch for "Start Line", "End Line", "Commodity" summaries - ignore for line_items.
+    - Watch for "Contract Discount" or "Sales Discount" rows - include as line items if they have a price, or capture in totals if they are summary rows.
+    - For Credit Notes, look for "Unit Credit Price" and "Total Credit" columns.
+    - Apply the same column mappings as Page 1 (e.g., `Part No.` -> `article`, `Net Price` -> `total_price` for New Product layout).
+    - CRITICAL: Do NOT extract summary rows (like "Subtotal", "Total", "Freight") as line items. If a row has no description or matches a total label, skip it.
+    - GHOST ROW CHECK: If a row has a null/empty description and its total matches the document subtotal, exclude it from line_items.
+  - TOTALS SECTION:
+    - This is the most important part of this page.
+    - Look for "Sub Total", "VAT Total", "Total".
+    - Look for "Delivery Charge" or "Shipping fee" if not on Page 1.
+    - Look for "WEEE Producer Registration Number" if not on Page 1.
+    - Look for "LockBox" payment instructions.
+  - BANK DETAILS: Often repeated on Page 2. Extract if not present on Page 1. Look for "Bank of America", "Barclays", "HSBC".
+  - SUBSCRIPTION: If "Start Date" and "End Date" are split across pages or only on Page 2, capture them here.
+
+  OUTPUT SCHEMA (Only include fields that are present or updated on this page):
+  {
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "subscription_period": {
+      "start": null,
+      "end": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }

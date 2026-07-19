@@ -1,0 +1,231 @@
+supplier: miltenyi
+dedup_key: invoice_number
+
+dashboard:
+  display_name: "Miltenyi Biotec"
+  color: "#0055A4"
+  c4_item_tolerance: 0.35
+  payer_fallback_keywords:
+    - "Finance"
+    - "Accounts"
+    - "Billing"
+    - "Central"
+    - "Purchasing"
+  negative_document_types:
+    - "Credit Note"
+    - "Credit Memo"
+  # Canonical document_type values this supplier legitimately emits. Read by
+  # the invoicing audit (D9). If absent, D9 is skipped for the supplier.
+  document_types:
+    - "Invoice"
+    - "Credit Note"
+    - "Credit Memo"
+    - "Debit Note"
+
+input_dir: invoices/miltenyi
+output_dir: databases
+db_filename: invoices_miltenyi.db
+
+pdf_dpi: 100
+max_tokens: 4096
+
+extraction_prompt: |
+  You are an expert invoice extraction engine. You are processing Page 1 of a Miltenyi Biotec invoice.
+  Your goal is to extract structured data into a JSON object.
+  
+  LAYOUT RULES FOR MILTENYI BIOTEC:
+  1. ADDRESS BLOCKS: The document often uses a two-column layout.
+     - Left column: "Invoice Address", "Sold to:", "Delivery Address", "Importer of Record".
+     - Right column: "Invoice details", "Bill to:", "Debit Note details", "Credit Note details".
+     - If "Sold to" and "Bill to" are distinct, map "Sold to" to `sold_to` and "Bill to" to `buyer`.
+     - If only "Sold to" is present, map it to `buyer`.
+     - Map "Delivery Address" or "Importer of Record" to `ship_to`.
+  2. DOCUMENT TYPE: Detect from headers.
+     - "Invoice", "Tax Invoice" -> "invoice"
+     - "Credit Note" -> "credit note"
+     - "Debit Note" -> "debit note" (Treat as a positive document for additional charges/corrections, NOT a cancellation).
+     - "Proforma" -> "proforma"
+  3. INVOICE NUMBER: Look for 10-digit numbers, often starting with "10" or "101" (e.g., 1012507299).
+  4. DATES: Convert all dates to YYYY-MM-DD. Formats seen: DD.MM.YYYY, DD-Mon-YY.
+  5. CURRENCY: Usually GBP, EUR, or USD. Extract ISO code.
+  6. LINE ITEMS:
+     - The table may be empty on Page 1 if the invoice is multi-page.
+     - Standard Layout: Extract position, article (Cat no), quantity, unit, description, unit_price, total_price.
+     - Tax Invoice Layout (case128266): Columns may be ['Order number', 'Part number', 'Description', 'Qty', 'UOM', 'Tax Status', 'Unit Price', 'Tax', 'Total']. Map accordingly.
+     - Merged Column Layout: Some layouts merge Art.-No. and Description into a single column labeled 'Art.-No. Description'. In this case, extract the catalogue number as `article` and the remaining text as `description`.
+     - CRITICAL PRICE EXTRACTION:
+       - `unit_price`: Extract from the "Unit Price" or "Gross Price" column (the list/catalogue price).
+       - `total_price`: Extract from the rightmost "Total" column for that row. DO NOT calculate `total_price` as `quantity * unit_price` if a "Total" column exists. The "Total" column reflects the actual charged amount (which may include per-item negotiated discounts).
+     - Discount Layout: 
+       - If a separate discount row exists in the table (e.g., "Contract Discount 22.00%"), extract `unit_price` from the Price/Gross column (catalog price).
+       - CRITICAL: For the `total_price` of a discount row, extract the monetary deduction amount from the "Total" column (e.g., if the row says "50%" in the price column but "£74.50" in the total column, use 74.50). DO NOT use the percentage number as the monetary value.
+       - Ensure `total_price` for discount rows is negative.
+     - Service Contract Layout: If the document begins with a contract title line (e.g. "One Year … Service Contract on … SN #…") followed by a validity period, treat that as a description-only row with no amounts. After the item table, a "Net X GBP/PC / X" line may appear — this is the computed net total, not a separate product. Do NOT extract it as a line item.
+  7. TOTALS:
+     - CRITICAL: If the totals block is not visible on Page 1 (or shows only a partial running total, or numbers that do not match the sum of visible line items), set ALL `totals` fields to null. Do not infer or estimate totals from partial page content. The continuation prompt will provide final totals from the last page.
+     - If a full totals section is visible, extract: "Subtotal", "Tax", "VAT", "Invoice Total", "Amount".
+     - SUBTOTAL DEFINITION: `subtotal` must be the sum of ALL line item `total_price` values (positive) BEFORE any invoice-level discounts are applied.
+     - INVOICE-LEVEL DISCOUNT: Look for a footer line indicating a percentage discount (e.g., "15% Framework Discount"). Extract the calculated monetary amount (e.g., if 15% of 7970 is 1195.5, extract 1195.5) into `discount_amount`. Do not extract the percentage number as the amount.
+     - Some invoices show 'down payment required' before VAT — this is a pre-payment deduction, not the subtotal. The final total is labeled 'Amount'.
+     - For "Tax Invoice" layout, look for "Subtotal / Tax / Invoice Total" aligned right.
+  8. REFERENCES:
+     - Look for: "Customer Order No./Date", "Order No./Date", "Your reference No.", "Shipment", "Delivered at Place".
+     - Map 'Delivery No./Date' to `references.order_confirmation`.
+  9. SUBSCRIPTION:
+     - Look for "starting" followed by a date in the description or a specific field.
+  10. SPECIAL NOTES:
+      - "Urgent medical use", "Temperature sensitive", "DAP", "Importer of Record" details.
+      - "VAT charged in error" notes on Debit/Credit notes.
+
+  UNIVERSAL RULES:
+  - Return ONLY valid JSON. No markdown, no explanation.
+  - Use JSON null for any field not present on the page.
+  - All dates → YYYY-MM-DD.
+  - All monetary values → plain numbers (no symbols, no commas).
+  - discount_amount → always a positive number.
+  - subtotal = sum of ALL line item total_prices across ALL pages BEFORE discounts.
+  - total = grand total from the FINAL summary section after VAT.
+  - Arithmetic check: subtotal - discount_amount + freight + vat_amount ≈ total.
+
+  OUTPUT TEMPLATE:
+  {
+    "document_type": null,
+    "invoice_number": null,
+    "invoice_date": null,
+    "currency": null,
+    "seller": {
+      "name": null,
+      "address": null,
+      "vat_number": null,
+      "registration_number": null,
+      "phone": null,
+      "website": null
+    },
+    "buyer": {
+      "name": null,
+      "department": null,
+      "address": null,
+      "customer_number": null
+    },
+    "ship_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "sold_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "references": {
+      "your_reference": null,
+      "order_reference": null,
+      "order_date": null,
+      "order_confirmation": null,
+      "sales_person": null,
+      "coordinator": null
+    },
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "subscription_period": {
+      "start": null,
+      "end": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }
+
+continuation_prompt: |
+  You are an expert invoice extraction engine. You are processing Page N (N > 1) of a Miltenyi Biotec invoice.
+  Your goal is to extract additional line items and the final totals, which will overwrite or append to the data from Page 1.
+  
+  LAYOUT RULES FOR MILTENYI BIOTEC (CONTINUATION):
+  1. LINE ITEMS:
+     - Append any new line items found to the list.
+     - Ensure positions are sequential if possible, or use the printed position.
+     - Look for "Contract Discount" or "Percentage Discount" rows and extract them as line items with negative prices.
+     - CRITICAL PRICE EXTRACTION:
+       - `unit_price`: Extract from the "Unit Price" or "Gross Price" column (the list/catalogue price).
+       - `total_price`: Extract from the rightmost "Total" column for that row. DO NOT calculate `total_price` as `quantity * unit_price` if a "Total" column exists. The "Total" column reflects the actual charged amount (which may include per-item negotiated discounts).
+     - For discount rows, extract the monetary deduction from the "Total" column (e.g., if the row says "50%" in the price column but "£74.50" in the total column, use 74.50).
+     - If columns are merged (e.g., 'Art.-No. Description'), split the content into `article` and `description`.
+     - Service Contract Layout: Do NOT extract the "Net X GBP/PC / X" summary line as a line item.
+  2. TOTALS (CRITICAL):
+     - The final totals are usually on the last page.
+     - Extract: Subtotal, Discount (rate and amount), VAT (rate and amount), Total.
+     - OVERWRITE RULE: If Page 1 returned non-null totals, you MUST replace them with the final page values. Do not preserve page-1 partial totals under any circumstances, even if they appear plausible.
+     - SUBTOTAL DEFINITION: `subtotal` must be the sum of ALL line item `total_price` values (positive) BEFORE any invoice-level discounts are applied.
+     - INVOICE-LEVEL DISCOUNT: Look for a footer line indicating a percentage discount (e.g., "15% Framework Discount"). Extract the calculated monetary amount (e.g., if 15% of 7970 is 1195.5, extract 1195.5) into `discount_amount`. Do not extract the percentage number as the amount.
+     - Ensure `total` is the final amount after VAT.
+     - If 'down payment required' is present, treat it as a deduction, not the subtotal.
+  3. PAYMENT TERMS & BANK:
+     - Look for "BACS", "Bank Details", "IBAN", "SWIFT", "Sort Code".
+     - Miltenyi often has dual currency bank details (EUR and GBP) on the footer. Extract the relevant one or both if distinct fields exist.
+     - Payment terms often state "Immediate", "30 days", or "Due immediately with interest".
+  4. REFERENCES & NOTES:
+     - Check for "Importer of Record", "EORI", "DAP", "Urgent medical use" notes on this page.
+  5. ARITHMETIC CHECK:
+     - Verify: subtotal - discount_amount + freight + vat_amount ≈ total.
+     - If there is a discrepancy, prioritize the explicit "Total" field and adjust `vat_amount` or `discount_amount` slightly to balance, or flag in notes if impossible.
+
+  OUTPUT TEMPLATE (ONLY FIELDS RELEVANT TO CONTINUATION):
+  {
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }

@@ -1,0 +1,231 @@
+supplier: agilent_technologies
+dedup_key: invoice_number
+
+dashboard:
+  display_name: "Agilent Technologies"
+  color: "#005596"
+  payer_fallback_keywords:
+    - "Payer"
+  negative_document_types:
+    - "credit note"
+    - "credit memo"
+    - "cancellation invoice"
+  c4_item_tolerance: 0.50
+
+input_dir: invoices/agilent_technologies
+output_dir: databases
+db_filename: invoices_agilent_technologies.db
+
+pdf_dpi: 100
+max_tokens: 8192
+
+extraction_prompt: |
+  You are an invoice extraction AI.
+  You are processing Page 1 of an invoice from Agilent Technologies.
+  Your goal is to extract structured data into a specific JSON schema.
+
+  SUPPLIER CONTEXT:
+  - Seller: Agilent Technologies LDA UK Limited.
+  - Layout Variations:
+    1. Standard: Two columns. Left: Invoice Address (Bill To) and Delivery Address (Ship To) stacked. Right: Header table with Customer Number, Order Number, Payment Terms, VAT-ID.
+    2. Service/Complex: Single column on left containing Bill To, Payer, Customer Contact, Ship To, and Location blocks. Right side contains a structured table with invoice metadata.
+  - Line Items: May include "Box-No.", "Model-Number", "Serial-Number" in the description.
+  - Discounts: Often appear as text below line items (e.g., "Percentage Discount 14.00% according contract UE101") or in columns (Gross/Net).
+  - Totals: Usually on the final page, but Page 1 may have partial totals.
+  - Dates: Format DD.MM.YYYY. Convert to YYYY-MM-DD.
+  - Currency: Usually GBP, USD, or EUR. Extract ISO code.
+
+  EXTRACTION RULES:
+  1. Return ONLY valid JSON. No markdown, no explanation.
+  2. Use JSON null for any field not present on this page.
+  3. Dates: CRITICAL — Agilent dates are ALWAYS in DD.MM.YYYY format. The FIRST number is the DAY, the SECOND is the MONTH. Example: 12.01.2026 = 12 January 2026 → output 2026-01-12 (NOT 2026-12-01). Always use the field labelled "Invoice Date" in the header — do NOT substitute the Order Date, Payment Due Date, or any other date field.
+  4. Money: Plain numbers only (no symbols, no commas).
+  5. Discount Amount: Always a positive number.
+  6. Subtotal — MANDATORY RULE (do NOT change to "sum of line items"):
+     - Read the "Items Total" value DIRECTLY from the summary section of the invoice. This is the PRE-DISCOUNT GROSS total.
+     - DO NOT compute `subtotal` by summing line item `total_price` values. Line totals are POST-discount (net), so summing them gives "Invoice Sub Total" (post-discount), NOT "Items Total" (pre-discount). These are DIFFERENT NUMBERS on any invoice with a discount.
+     - Fallback when no discount: if "Items Total" is not printed (invoice has no discount), `subtotal` = "Invoice Sub Total" = sum of line item total_prices. This fallback applies ONLY when there is no discount line.
+     - Affected case files where the Gross/Net layout shows a discount: case551859, case566575, case491893, case16998 — these MUST use "Items Total" from the summary, not a sum of net line totals.
+  7. Total: The grand total after VAT.
+  8. Arithmetic Check (MANDATORY SELF-CHECK):
+     - Verify: `subtotal − discount_amount + freight + vat_amount ≈ total` (within £1).
+     - Verify: `sum_of_line_item_total_prices ≈ subtotal − discount_amount` (within £1). If this fails, you put the wrong value in `subtotal` — re-read "Items Total" from the summary section.
+     - If the gap is exactly equal to `discount_amount`, you summed line items into `subtotal` by mistake (line totals are already net). Re-read "Items Total".
+  9. Document Type: Default to "invoice". Check for "Credit Note" or "Cancellation" in headers.
+  10. Addresses:
+      - "Invoice Address" / "Bill To" -> buyer.address / buyer.name.
+      - "Delivery Address" / "Ship To" -> ship_to.address / ship_to.name.
+      - "Payer" -> buyer.name (if different from Bill To).
+      - "Location" -> ship_to.department or notes if ambiguous.
+      - "Sold To": This field is not used for Agilent invoices; set to null.
+  11. References:
+      - "Agilent Order Number" / "Your Order" -> references.order_reference.
+      - "Order Date" -> references.order_date.
+      - "Customer Number" -> buyer.customer_number.
+      - "Payment Terms" -> payment_terms.
+      - "Service Request Number" / "Service Order Number" / "Customer Authorization" -> references.order_confirmation.
+      - "Your Reference" / "Sales Person" / "Coordinator": If not found, set to null.
+      - SERVICE INVOICES (177xxxxxxx series) ONLY: "Model-Number" -> references.order_reference (if no Agilent Order Number present). "Model-Description" -> notes. "Serial-Number" -> ship_to.department.
+  12. Line Items:
+      - Extract position, article (product name), quantity, unit, description (include Box-No, Model, Serial if present), unit_price, total_price.
+      - PRICE EXTRACTION RULE: `unit_price` = the "price/unit" column value (this is the GROSS list price — Agilent does not print a net unit price column). `total_price` = the "Total:" line that appears AFTER the "Total Discounts: GBP X-" line within each item block. This is the net total for the item after discount. Do NOT use the "Amount" column for total_price — that is the gross line total (qty × unit_price) and is always wrong when a discount exists.
+      - PER-ITEM VERIFICATION: After extracting each item's total_price, check: if a "Total Discounts:" line is visible for this item and total_price equals qty × unit_price exactly, you have used the "Amount" column by mistake — correct total_price to use the "Total:" value instead.
+      - DISCOUNT EXTRACTION RULE: If a discount percentage is visible per line item (e.g., "14.00%"), extract this value into `totals.discount_rate_percent`. The canonical `discount_amount` must come from the "Total Discounts" summary section on the final page only.
+      - SERVICE INVOICE RULE (no visible line item table): If the invoice has a Bill To / Payer / Ship To / Location layout (service invoice type) and no line item table is visible, construct a SINGLE synthetic line item: article = Model-Number value, description = Model-Description value (append "Serial: <Serial-Number>" if present), quantity = 1, unit = null, unit_price = null, total_price = null (prices are not shown on these pages).
+  13. Bank Details: Often at the bottom of pages. Look for Sort Code, Account Number, IBAN, SWIFT.
+  14. VAT Handling (MULTI-RATE — MANDATORY):
+      - Agilent invoices often contain TWO VAT rows (e.g., "VAT 0.00%" and "VAT 20.00%"). You MUST sum the amounts from ALL VAT rows into a single `vat_amount`.
+      - If multiple rates exist, set `vat_rate_percent` to null (do NOT average them, do NOT pick the "primary" rate, do NOT pick the non-zero rate). The single rate field is meaningful only when there is exactly one VAT rate on the invoice.
+      - If only one VAT rate is present, set `vat_rate_percent` to that rate.
+      - DO NOT discard the 0% VAT row's amount — it is still part of the total VAT (£0, but the row exists for accounting and you must include it in the sum even though it adds nothing).
+  15. Shipping/Handling:
+      - "Shipping & Handling" -> Map the entire value to `freight`.
+      - Do not split "Shipping & Handling" between `freight` and `handling_charges`. Set `handling_charges` to null unless a distinct "Handling" fee is explicitly listed separately.
+      - "Total Net" is an INTERMEDIATE TOTAL (= Invoice Sub Total + Shipping & Handling, before VAT) — it is NOT a schema field. Do NOT map it to `total`. The `total` field must always come from "Invoice Total" only.
+  16. Seller VAT:
+      - Look for "VAT-ID Agilent Technologies" or similar labels in the header or footer. Map this value to `seller.vat_number`.
+
+  JSON SCHEMA TO FILL:
+  {
+    "document_type": null,
+    "invoice_number": null,
+    "invoice_date": null,
+    "currency": null,
+    "seller": {
+      "name": "Agilent Technologies LDA UK Limited",
+      "address": null,
+      "vat_number": null,
+      "registration_number": null,
+      "phone": null,
+      "website": null
+    },
+    "buyer": {
+      "name": null,
+      "department": null,
+      "address": null,
+      "customer_number": null
+    },
+    "ship_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "sold_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "references": {
+      "your_reference": null,
+      "order_reference": null,
+      "order_date": null,
+      "order_confirmation": null,
+      "sales_person": null,
+      "coordinator": null
+    },
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "subscription_period": {
+      "start": null,
+      "end": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }
+
+continuation_prompt: |
+  You are an invoice extraction AI.
+  You are processing Page N (N > 1) of an invoice from Agilent Technologies.
+  You must extract additional line items and the final totals section.
+  The final totals section (usually on the last page) overwrites any partial totals from previous pages.
+
+  SUPPLIER CONTEXT:
+  - Layout: Line items may continue. Totals section usually appears on the final page.
+  - Totals Section: Look for "Items Total", "Total Discounts", "Invoice Sub Total", "VAT", "Invoice Total".
+  - Discounts: "Total Discounts" is often a summary value. Ensure discount_amount is positive.
+  - Bank Details: Often repeated on every page. Use the most complete set found.
+  - Payment Terms: Often found on the last page or in the header.
+
+  EXTRACTION RULES:
+  1. Return ONLY valid JSON. No markdown, no explanation.
+  2. Use JSON null for fields not present on this page.
+  3. Line Items: Append to the list. Ensure position numbers are sequential if possible, or use the printed position.
+     - unit_price = gross "price/unit" column. total_price = the "Total:" line AFTER "Total Discounts:" for each item — NOT the "Amount" column. If total_price = qty × unit_price exactly and a discount line exists, you used the wrong column — fix it.
+  4. Totals (MANDATORY rules — same as page 1):
+     - subtotal = Read "Items Total" value from the summary section DIRECTLY (PRE-DISCOUNT GROSS). DO NOT compute by summing line items — line totals are post-discount net. Fallback: if no "Items Total" is printed (no discount on this invoice), subtotal = "Invoice Sub Total" = sum of line items.
+     - discount_amount: Read "Total Discounts" from the summary section. Always positive.
+     - total: The final "Invoice Total" from the summary section.
+     - vat_amount: Sum ALL VAT rows (e.g. 0% + 20% rows → single sum). Do NOT discard the 0% row's amount.
+     - freight: Look for "Shipping & Handling". Map entire value to `freight`. Set `handling_charges` to null unless distinct.
+     - "Total Net" is an INTERMEDIATE TOTAL (after S&H, before VAT) — NOT a schema field. Do NOT map it to `total`. Use "Invoice Total" for the `total` field only.
+  5. VAT Handling (MULTI-RATE — MANDATORY):
+     - If multiple VAT rates exist (e.g. 0% and 20%), sum ALL their amounts into `vat_amount` and set `vat_rate_percent` to null. Do NOT pick a "dominant" or "primary" rate.
+     - If only one rate exists, set `vat_rate_percent` to that rate.
+  6. Arithmetic Check (MANDATORY SELF-CHECK):
+     - Verify: subtotal − discount_amount + freight + vat_amount ≈ total (within £1).
+     - Verify: sum_of_line_item_total_prices ≈ subtotal − discount_amount (within £1). If this fails, you put the wrong value in `subtotal` — re-read "Items Total" from the summary section.
+  7. Bank Details: If present on this page, extract them.
+  8. Payment Terms: If present on this page, extract them.
+  9. Discount Rate: If the summary section or line items show a specific discount percentage (e.g., "14.00%"), extract it to `totals.discount_rate_percent`.
+
+  JSON SCHEMA TO FILL (Only relevant fields for continuation):
+  {
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }

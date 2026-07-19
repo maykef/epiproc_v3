@@ -1,0 +1,36 @@
+# Per-customer instance: engine container + its own Postgres sidecar.
+# Copy into a customer folder as compose.yml; `docker compose up -d`.
+# The engine reaches the shared vLLM GPU server via EPIPROC_VLLM_URL.
+services:
+  app:
+    image: epiproc:3
+    env_file: .env
+    ports:
+      - "${EPIPROC_PORT:-5001}:5001"
+    volumes:
+      - ./invoices:/data/invoices
+      - ./imports:/data/imports
+      - ./configs:/data/configs
+      - ./reports:/data/reports
+      - ./snapshots:/data/snapshots
+      - ./logs:/data/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reach the host's shared vLLM :8000
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: epiproc
+      POSTGRES_PASSWORD: epiproc
+      POSTGRES_DB: epiproc
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U epiproc"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

@@ -1,0 +1,262 @@
+# Department name normalisation rules.
+# Each entry has a canonical 'name' and a list of lowercase 'patterns'.
+# _dept_from_combo() returns the name of the first entry whose patterns list
+# contains a substring present in the lowercased address/name combo.
+# Ordering matters — earlier entries take priority.
+#
+# Special cases handled in Python (not expressible as simple substrings):
+#   - CIMR compound match: "cmr" AND ("hills rd" OR "hills road")
+#   - Shared Services skip: norm_dept() skips "Shared Services" from the
+#     buyer combo and falls back to ship_to before accepting it.
+
+- name: Psychiatry
+  patterns:
+    - sgdp
+    - de crespigny
+    - denmark hill
+    - psychiatry
+
+- name: Pathology
+  patterns:
+    - pathology
+
+- name: Sainsbury Laboratory
+  patterns:
+    - sainsbury
+    - sanisbury
+    - bateman st
+
+- name: Plant Sciences
+  patterns:
+    - plant science
+
+- name: Gurdon Institute
+  patterns:
+    - gurdon
+
+- name: CRUK Cambridge Institute
+  patterns:
+    - cruk
+    - cancer research uk
+    - cambridge research institute
+    - cambridge research inst
+    - early cancer institute
+    - hutchison research centre
+    - hutchison/mrc research centre
+    - hutchison/mrc
+    - li ka shing
+    - ed adrian bldg
+    - ed adrian building
+    - robinson way
+
+- name: Oncology
+  patterns:
+    - oncology
+
+- name: Veterinary Medicine
+  patterns:
+    - vet medicine
+    - veterinary
+    - clinical vet
+
+- name: Zoology
+  patterns:
+    - zoology
+
+- name: Genetics
+  patterns:
+    - genetics
+
+- name: Clinical Neuroscience
+  patterns:
+    - clinical neuroscience
+    - brain repair
+    - brain rep
+
+- name: "Physiology, Dev & Neuro"
+  patterns:
+    - physiology
+
+- name: Stem Cell Institute
+  patterns:
+    - stem cell
+    - cambridge sci
+    - mrc cambridge sci
+
+- name: Heart & Lung Research Institute
+  patterns:
+    - heart and lung
+    - "heart & lung"
+    - " hlri"
+    - h.l.r.i
+    - papworth rd
+    - papworth road
+
+- name: Metabolic Science
+  patterns:
+    - metabolic science
+    - metabolic research
+
+- name: Clinical Biochemistry
+  patterns:
+    - clinical biochem
+
+- name: Biochemistry
+  patterns:
+    - biochemistry
+
+- name: MRC Toxicology
+  patterns:
+    - toxicology
+    - gleeson building
+
+- name: MRC Molecular Biology
+  patterns:
+    - mrc lab of molecular biology
+    - mrc laboratory of molecular biology
+    - "mrc lab. of molecular biology"
+    - mrc molecular biology
+
+- name: MRC Epidemiology
+  patterns:
+    - mrc epidemiology
+
+- name: CIMR
+  patterns:
+    - cimr
+    - cmir
+    - cambridge institute for medical research
+    - cambridge institute for med
+    - " cmri"
+    - cmr administration
+    - cmrf
+    # Compound pattern "cmr" AND ("hills rd" OR "hills road") is handled in Python.
+
+- name: Archaeology
+  patterns:
+    - archaeology
+    - archaeological
+    - mcdonald institute
+    - mcdonald inst
+
+- name: Adv Imaging Centre
+  patterns:
+    - cambridge advanced imaging
+
+- name: Haematology
+  patterns:
+    - haematolog
+
+- name: MRC Mito Biology
+  patterns:
+    - mitochondrial
+
+- name: MRC Cell Biology
+  patterns:
+    - mrc cambridge cell
+
+- name: Milner Therapeutics
+  patterns:
+    - milner therapeutic
+
+- name: Jeffrey Cheah Biomedical Centre
+  patterns:
+    - jeffrey cheah
+    - jcbc
+    - jsbc
+    - puddicombe way
+
+- name: CITID
+  patterns:
+    - citid
+    - citiid
+    - ctiid
+    - ctiib
+
+- name: "Obstetrics & Gynaecology"
+  patterns:
+    - obstetric
+    - gynaecol
+
+- name: Pharmacology
+  patterns:
+    - alborada
+    - pharmacolog
+
+- name: Applied Maths
+  patterns:
+    - applied mathematics
+    - damtp
+
+- name: Physics
+  patterns:
+    - cavendish
+    - physics
+
+- name: Materials Science
+  patterns:
+    - materials sci
+    - metallurg
+
+- name: Chemical Engineering
+  patterns:
+    - chemical engineering
+
+- name: Earth Sciences
+  patterns:
+    - earth science
+    - bullard lab
+
+- name: Wellcome/MRC
+  patterns:
+    - wellcome trust
+    - genome research ltd
+    - sanger institute
+    - hinxton
+
+- name: Public Health
+  patterns:
+    - public health
+
+- name: Psychology
+  patterns:
+    - psychology
+
+- name: Genomic Medicine
+  patterns:
+    - genomic medicine
+
+- name: Clinical Medicine
+  patterns:
+    - school of clinical med
+    - dept medicine
+    - dept medeicine
+    - dept medecine
+    - department of medicine
+    - medicine dept
+    - addenbrooke
+    - clifford albutt
+    - clifford allbutt
+
+- name: Surgery
+  patterns:
+    - surgery
+
+- name: Paediatrics
+  patterns:
+    - paediatric
+
+- name: Engineering
+  patterns:
+    - engineering
+
+- name: Chemistry
+  patterns:
+    - chemistry
+
+- name: Shared Services
+  patterns:
+    - shared services
+    - accounts payable
+    - finance division
+    - greenwich house

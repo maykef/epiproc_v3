@@ -1,0 +1,239 @@
+supplier: life_technologies
+dedup_key: invoice_number
+
+dashboard:
+  display_name: "Life Technologies"
+  color: "#00A3E0"
+  payer_fallback_keywords:
+    - "Central Finance"
+    - "Accounts Payable"
+    - "Finance Department"
+    - "Billing Department"
+  negative_document_types:
+    - "CREDIT NOTE"
+    - "Credit Note"
+  # Canonical document_type values this supplier legitimately emits. Read by
+  # the invoicing audit (D9). If absent, D9 is skipped for the supplier.
+  document_types:
+    - "Invoice"
+    - "Credit Note"
+    - "Debit Note"
+    - "Consolidated Invoice - Detail"
+
+input_dir: invoices/life_technologies
+output_dir: databases
+db_filename: invoices_life_technologies.db
+
+pdf_dpi: 100
+max_tokens: 4096
+
+extraction_prompt: |
+  You are an expert invoice extraction AI.
+  You are processing Page 1 of an invoice from "Life Technologies" (or Thermo Fisher Scientific).
+  
+  INSTRUCTIONS:
+  1. Return ONLY valid JSON. No markdown, no explanations.
+  2. Use `null` for any field not found on this page.
+  3. Dates must be formatted as YYYY-MM-DD (handle both DD/MM/YYYY and DD.MM.YYYY).
+  4. Monetary values must be plain numbers (no symbols, no commas).
+  5. `discount_amount` must always be a positive number.
+  6. `subtotal` is the sum of ALL line item `total_price` values across ALL pages. For Page 1, sum visible items but note if the full summary is missing.
+  7. `total` is the grand total from the final summary section (usually on the last page, so set to null here if not present).
+  8. **Layout Specifics for Life Technologies:**
+     - **Seller:** Look for "Life Technologies Limited" or "Life Technologies GmbH". Address often on the right or top right.
+     - **Buyer/Ship To:** 
+       - Standard: "Bill To" (left) and "Ship To" (right).
+       - Service Contracts (Old Format): "Invoice to" (left) and "Ship to" (right).
+       - Credit Notes: "Credit To" (left) and "Returned From" (right) OR "Credit to" (left) and "Ship to" (right).
+       - Look for "Customer Account Number", "Cust Tax ID", "Ship-to Account Number".
+     - **Document Type:**
+       - Check for "CREDIT NOTE" watermark or text. document_type = "credit note".
+       - "DEBIT NOTE" appears on ~3% of the corpus and is a POSITIVE document, NOT a credit. document_type = "debit note". Treat amounts as positive.
+       - "Consolidated Invoice - Detail" is a POSITIVE invoice (do not treat as negative). document_type = "invoice".
+       - "Consolidated Invoice - Summary" is the totals page (continuation).
+     - **Line Items:**
+       - **Standard Columns:** Position (Line Number), Article (Catalog Number / MPG Part No.), Shipped Quantity, Unit, Description, List Price, Unit Price, Discount %, Extended Price.
+         - Map `Catalog Number` (or `MPG Part No.`) to `article`.
+         - Map `Shipped Quantity` to `quantity`.
+         - **CRITICAL — Unit Price column choice:** TWO price columns are printed: `List Price` (gross, pre-discount, IGNORE) and `Unit Price` (net, post-discount, USE THIS). Copy ONLY the `Unit Price` (net) column to `unit_price`. NEVER copy `List Price`.
+         - Map `Extended Price` to `total_price`.
+         - Map `Discount %` to the line's `discount_rate_percent` if shown.
+       - **Service Contract Columns:** Line, Qty, Part No., Description, Unit Price, Net Price (maps to total_price), VAT Amount. (No Discount column.)
+       - **Credit Note Columns (standard):** Line, Qty, Part No., Description, Unit Price, Net Price (or Credit Price), VAT Amount.
+       - **Credit Note Columns (new product variant):** Line No., Qty, Part No., VAT Code, Description, Unit Price, Credit Price (or `Credit`), Total Credit. Map `Total Credit` to `total_price` for this variant. Address block uses "Credit To / Returned From" or "Credit to / Ship to".
+       - **Consolidated Invoice Columns (CRITICAL):** Cost Centre/Center, Order Number, Purchase Order, Catalog Number, Description/Size, Quantity, Unit Price, Extended Price.
+         - Map `Catalog Number` to `article`.
+         - Map `Extended Price` to `total_price`.
+         - Map `Purchase Order` to `references.order_reference`.
+         - Map `Order Number` to `references.order_reference` if PO is missing.
+         - **IMPORTANT:** These layouts often have NO line number column. Set `position` to `null` for these items.
+       - **Gene Synthesis Lines (CRITICAL — VLGS / CLPM / PRGS articles, "BASE PAIR" unit):**
+         - These lines print THREE volume-tier unit prices left-to-right (e.g. `0.19  0.11  0.08`) plus a list-price reference (`17.00  73.00  17.00`) and an `EACH` label. The ACTUAL billed rate is whichever tier price, when multiplied by `quantity`, equals the rightmost Extended Price.
+         - `quantity` is the number of base pairs (e.g. 1389). Set `unit` to `"BASE PAIR"` when shown — NOT `"EACH"` (the `EACH` label is secondary).
+         - For `unit_price`: try each printed price in turn; use the one that cross-foots (`quantity × unit_price = total_price` within ±0.50). Do NOT use the £17, £73 or £103 list-price/threshold columns.
+         - Example: line shows `0.19 0.11 0.08  VALUE GENE SYN ... BASE PAIR  17.00 73.00 17.00 EACH 111.12` with `qty=1389`. Correct: `unit_price=0.08, total_price=111.12, unit="BASE PAIR"` because 1389 × 0.08 = 111.12.
+       - **New Product Format:** Line No., Qty, MPG Part No., VAT Code, Description, Unit Price, Net Price.
+         - Map `MPG Part No.` to `article`.
+         - Map `Net Price` to `total_price`.
+         - **Discounts:** Look for a separate row below the item with a negative amount. Do not look for a percentage column.
+         - **Export Control:** Check for "Export Control", "Start Line", "End Line", "Commodity", "Country of Origin", "Net Mass" rows after items.
+       - **Discounts:** May appear as a percentage column, a separate row with negative amount, or a calculated amount below the percentage.
+       - **Fuel Surcharge:** This is a delivery charge (freight), not a line item discount.
+       - **CROSS-FOOT INVARIANT (MANDATORY):** For every line item, `quantity × unit_price` MUST equal `total_price` within ±0.50 GBP. If your extracted values violate this, you have picked the wrong column (most commonly `List Price` instead of `Unit Price`, or a list-price reference on a Gene Synthesis line) — re-read the line and pick the price column that cross-foots. If no printed value cross-foots, set `unit_price = null` rather than emit an inconsistent value.
+     - **Totals:**
+       - Standard: "Subtotal", "VAT Amount", "Total Amount".
+       - Service Contract: "Sub Total", "VAT Total", "Total".
+       - Consolidated: Look for "Tax group summary" (Tax Code, Taxable Amount, Rate, Amount) or "GL Number" breakdowns.
+       - Look for "Total Including VAT".
+     - **References:**
+       - Common: "Order Number", "Purchase Order", "Contract Number", "Release Number".
+       - Specific: "LT Order Number", "Customer Order Number", "Quotation Number", "GL Number", "Blanket Order Number", "Date Shipped", "Shipper", "Service Report Number", "Previous Invoice".
+     - **Subscription:** Look for "Plan Period" OR "Contract Period" in line item descriptions or dedicated sections.
+     - **Bank Details:** Usually on the final page (Summary), but check footer. Look for "Remittance Advice".
+     - **Notes:** Check for "Export Control", "Original Copy", "Payment Terms" (e.g., "Net 30", "30 days end of month").
+
+  SCHEMA TO FILL:
+  {
+    "document_type": null,
+    "invoice_number": null,
+    "invoice_date": null,
+    "currency": null,
+    "seller": {
+      "name": null,
+      "address": null,
+      "vat_number": null,
+      "registration_number": null,
+      "phone": null,
+      "website": null
+    },
+    "buyer": {
+      "name": null,
+      "department": null,
+      "address": null,
+      "customer_number": null
+    },
+    "ship_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "sold_to": {
+      "name": null,
+      "department": null,
+      "address": null
+    },
+    "references": {
+      "your_reference": null,
+      "order_reference": null,
+      "order_date": null,
+      "order_confirmation": null,
+      "sales_person": null,
+      "coordinator": null
+    },
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "subscription_period": {
+      "start": null,
+      "end": null
+    },
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }
+
+continuation_prompt: |
+  You are an expert invoice extraction AI.
+  You are processing Page N (N > 1) of a multi-page invoice from "Life Technologies".
+  The previous page(s) contained line items. This page may contain:
+  1. Additional line items (append to the list).
+  2. The final "Summary" section with totals, VAT, and bank details.
+  3. Payment terms and notes.
+
+  INSTRUCTIONS:
+  1. Return ONLY valid JSON. No markdown, no explanations.
+  2. Use `null` for fields not present on this page.
+  3. **CRITICAL:**
+     - `subtotal`: Must be the sum of ALL line items from ALL pages. If you see the full list of items here, recalculate. If not, set to null (the pipeline will merge).
+     - `total`: Must be the grand total from the FINAL summary section on this page.
+     - `discount_amount`: Always positive.
+     - `freight`: Look for "Fuel Surcharge".
+  4. **Layout Specifics for Life Technologies (Continuation):**
+     - **Summary Page:** Often titled "Consolidated Invoice - Summary".
+     - **Totals:** Look for "Subtotal", "VAT Amount", "Total Including VAT".
+     - **Tax Group:** Look for "Tax group summary" with Tax Code, Taxable Amount, Rate, Amount.
+     - **GL Number / Purchase Order Breakdown:** Look for tables grouping totals by GL Number or Purchase Order.
+     - **Bank Details:** Look for "Remittance Advice" section. Often contains multiple bank accounts (GBP, EUR, USD). Extract the primary or all if possible.
+     - **Payment Terms:** Often "Net 30" or "30 days end of month".
+     - **Line Items:** If present, append them. The SAME column-mapping and CROSS-FOOT rules from Page 1 apply.
+       - **Standard Columns:** If both `List Price` and `Unit Price` columns are printed, use ONLY the `Unit Price` (net, post-discount) — NEVER copy `List Price`. Map `Extended Price` to `total_price`.
+       - **Consolidated Format:** If columns are `Cost Centre`, `Order Number`, `Purchase Order`, `Catalog Number`, `Description/Size`, `Quantity`, `Unit Price`, `Extended Price`:
+         - Map `Catalog Number` to `article`.
+         - Map `Extended Price` to `total_price`.
+         - Map `Purchase Order` to `references.order_reference`.
+         - **IMPORTANT:** Set `position` to `null` for these items as they lack a line number column.
+       - **Gene Synthesis (VLGS / CLPM / PRGS, "BASE PAIR" unit):** Three tier unit prices are printed; use the one that cross-foots with `Extended Price ÷ quantity`. Ignore the £17/£73/£103 list-price columns. Set `unit = "BASE PAIR"`.
+       - **New Product Format:** If columns include `MPG Part No.` and `Net Price`, map accordingly. Look for negative amount rows for discounts.
+       - **Fuel Surcharge:** May appear as a line item here; map to `freight` in totals, not as a line item.
+       - **CROSS-FOOT INVARIANT:** `quantity × unit_price` MUST equal `total_price` within ±0.50 GBP for every line. If it does not, re-check the price column choice.
+     - **References:** Check for "GL Number" breakdowns.
+
+  SCHEMA TO FILL (Only relevant fields for continuation):
+  {
+    "line_items": [
+      {
+        "position": null,
+        "article": null,
+        "quantity": null,
+        "unit": null,
+        "description": null,
+        "unit_price": null,
+        "total_price": null
+      }
+    ],
+    "totals": {
+      "subtotal": null,
+      "discount_rate_percent": null,
+      "discount_amount": null,
+      "discount_2": null,
+      "handling_charges": null,
+      "freight": null,
+      "vat_rate_percent": null,
+      "vat_amount": null,
+      "total": null
+    },
+    "payment_terms": null,
+    "bank_details": {
+      "bank_name": null,
+      "sort_code": null,
+      "account_number": null,
+      "iban": null,
+      "swift": null
+    },
+    "notes": null
+  }
