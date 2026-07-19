@@ -247,13 +247,14 @@ def _apply(template: str, subs: dict) -> str:
     template = template.replace("</body>", _tab_toggle_js() + "</body>", 1)
     # Currency symbol is per-customer (the template hardcodes £). Applied after
     # substitutions so injected values (e.g. the header grand total) convert too.
-    from epiproc.db.settings import get_currency_symbol, get_price_tracker_key
+    from epiproc.db.settings import get_currency_symbol, get_enabled_tabs, get_price_tracker_key
     sym = get_currency_symbol()
     if sym != "£":
         template = template.replace("£", sym)
     template = template.replace(
         "</head>",
-        f"<script>window.PT_GROUP={json.dumps(get_price_tracker_key())};</script></head>", 1,
+        f"<script>window.PT_GROUP={json.dumps(get_price_tracker_key())};"
+        f"window.EPIPROC_TABS={json.dumps(get_enabled_tabs())};</script></head>", 1,
     )
     return template
 

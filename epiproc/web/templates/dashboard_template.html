@@ -823,6 +823,15 @@ function applyGlobalSupFilter(){
   renderSvcSection();
 }
 
+// ── Drill-down from Overview charts ──────────────────────────────────────────
+function _tabOn(k){return !window.EPIPROC_TABS||window.EPIPROC_TABS.indexOf(k)>=0;}
+function _goTab(k){if(!_tabOn(k))return;var el=document.querySelector('nav .tab[onclick*="showPage(\''+k+'\'"]');if(el&&el.offsetParent!==null)el.click();}
+function _drillSup(name){var g=document.getElementById('global-sup');if(g){g.value=name;applyGlobalSupFilter();}_goTab('suppliers');}
+function _sankeyDrill(d){
+  if(d.side==='src'){ _tabOn('departments') ? buildSankey({type:'sup',name:d.name}) : _drillSup(d.name); }
+  else { _tabOn('departments') ? buildSankey({type:'cat',name:d.name}) : _goTab('categories'); }
+}
+
 // ── Nav ────────────────────────────────────────────────────────────────────
 function showPage(id,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -958,7 +967,10 @@ function buildMonthly(){
   }).filter(ds=>ds.data.some(v=>v>0));
   mkChart('c-monthly',{
     type:'bar',data:{labels,datasets},
-    options:{responsive:true,plugins:{
+    options:{responsive:true,
+      onClick:(e,els)=>{if(els.length)_goTab('categories');},
+      onHover:(e,els)=>{e.native.target.style.cursor=els.length?'pointer':'default';},
+      plugins:{
       legend:{labels:{color:tc,font:{size:10},boxWidth:12}},
       tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${gbp(ctx.parsed.y)}`}}
     },scales:{
@@ -1116,9 +1128,7 @@ function buildSankey(filter) {
     .attr('fill', d => d.side==='src' ? srcColorFn(d.name) : tgtColorFn(d.name))
     .attr('rx', 3)
     .style('cursor', !f ? 'pointer' : 'default')
-    .on('click', !f ? (event,d) => {
-      buildSankey(d.side==='src' ? {type:'sup',name:d.name} : {type:'cat',name:d.name});
-    } : null);
+    .on('click', !f ? (event,d) => _sankeyDrill(d) : null);
   rects.append('title').text(d => (!f?'Click to drill down: ':'')+d.name+': '+gbp(d.value));
 
   // Source labels (left) — clickable on default view
@@ -1127,7 +1137,7 @@ function buildSankey(filter) {
     .attr('text-anchor','end').attr('dominant-baseline','middle')
     .attr('fill','#e4e8f5').attr('font-size',11)
     .style('cursor', !f ? 'pointer' : 'default')
-    .on('click', !f ? (event,d) => buildSankey({type:'sup',name:d.name}) : null)
+    .on('click', !f ? (event,d) => _sankeyDrill(d) : null)
     .text(d => d.name);
 
   // Target labels (right) — clickable on default view
@@ -1136,7 +1146,7 @@ function buildSankey(filter) {
     .attr('text-anchor','start').attr('dominant-baseline','middle')
     .attr('fill','#e4e8f5').attr('font-size',11)
     .style('cursor', !f ? 'pointer' : 'default')
-    .on('click', !f ? (event,d) => buildSankey({type:'cat',name:d.name}) : null)
+    .on('click', !f ? (event,d) => _sankeyDrill(d) : null)
     .text(d => d.name + '  ' + gbp(d.value));
 }
 
