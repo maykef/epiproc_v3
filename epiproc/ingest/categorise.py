@@ -1,24 +1,79 @@
-"""Line-item spend categorisation.
+"""Line-item categorisation via the local model.
 
-PORT TARGET: /mnt/nvme8tb/prefect_invoice_extraction/scripts/generate_dashboard_v5.py
-(Phase 1). This logic lives ONLY in the retired repo — not in v1 or v2 — so to
-keep v3 self-sufficient it must be copied in and owned here.
-
-Categories are defined in configs/categorisation.yml (12 categories: Capital
-Equipment, Consumables, Spare Parts, Accessories & IT, Service Contracts,
-Preventive Maintenance, Installation, Labour & Repairs, Software, Training,
-Freight & Handling, Discounts & Adjustments). "Unsure -> Consumables";
-"Delivery Notes -> empty".
+Text-only (no vision) — it classifies the already-extracted line-item
+descriptions, so it's fast and cheap. The category VOCABULARY is customer-
+specific and lives in the instance DB (settings.categorisation_scheme): a flower
+wholesaler categorises by flower type (Roses, Peonies, Chrysanthemums…), a lab by
+equipment/consumables. Guided JSON constrains the output to one category per item.
 """
 from __future__ import annotations
 
+import json
 
-def categorise_invoice(invoice_id: int, cfg, client) -> int:  # noqa: ANN001
-    """Classify every line item of one invoice; write invoice_items.category.
+from openai import OpenAI
 
-    STUB. Build order:
-      1. Read generate_dashboard_v5.py Phase 1 from the retired repo.
-      2. Port the categorisation prompt call + row-number->category mapping.
-      3. UPDATE invoice_items.category; return count categorised.
-    """
-    raise NotImplementedError("categorise_invoice — P3 build (port from retired repo)")
+from epiproc.db.pool import pool
+from epiproc.db.settings import get_categorisation_scheme
+from epiproc.settings import settings
+
+
+def _schema() -> dict:
+    return {"type": "json_schema", "json_schema": {
+        "name": "categories", "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {"categories": {"type": "array", "items": {"type": "string"}}},
+            "required": ["categories"], "additionalProperties": False,
+        },
+    }}
+
+
+def _categorise_descriptions(client: OpenAI, model: str, descriptions: list[str], scheme: str) -> list[str]:
+    lines = "\n".join(f"{i + 1}. {d or '(no description)'}" for i, d in enumerate(descriptions))
+    prompt = (
+        f"{scheme}\n\n"
+        f"Classify each of the following {len(descriptions)} line items. Return JSON "
+        f"with a 'categories' array of exactly {len(descriptions)} short strings, one "
+        f"per item, in the same order.\n\nItems:\n{lines}"
+    )
+    r = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.0, max_tokens=1500,
+        response_format=_schema(),
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+    )
+    cats = json.loads(r.choices[0].message.content).get("categories", [])
+    # pad/truncate to match item count so zip is safe
+    cats = (cats + ["Other"] * len(descriptions))[:len(descriptions)]
+    return [c.strip() or "Other" for c in cats]
+
+
+def categorise_all(only_uncategorised: bool = True, progress=None) -> int:
+    """Categorise every invoice's line items (per-invoice batches). Returns count."""
+    client = OpenAI(base_url=settings.vllm_url, api_key="none")
+    scheme = get_categorisation_scheme()
+    done = 0
+    with pool().connection() as conn:
+        inv_ids = [r["id"] for r in conn.execute("SELECT id FROM invoices ORDER BY id").fetchall()]
+        for n, inv_id in enumerate(inv_ids, 1):
+            q = "SELECT id, description, article FROM invoice_items WHERE invoice_id=%s"
+            if only_uncategorised:
+                q += " AND category IS NULL"
+            items = conn.execute(q + " ORDER BY id", (inv_id,)).fetchall()
+            if not items:
+                continue
+            descs = [(it["description"] or it["article"] or "") for it in items]
+            try:
+                cats = _categorise_descriptions(client, settings.vllm_model, descs, scheme)
+            except Exception as e:  # noqa: BLE001
+                if progress:
+                    progress(f"invoice {inv_id}: error {e}")
+                continue
+            for it, c in zip(items, cats):
+                conn.execute("UPDATE invoice_items SET category=%s WHERE id=%s", (c, it["id"]))
+            conn.commit()
+            done += len(items)
+            if progress:
+                progress(f"invoice {n}/{len(inv_ids)}: {len(items)} items categorised")
+    return done

@@ -53,3 +53,21 @@ def set_enabled_tabs(tabs) -> None:
     if not keep:                               # never leave a customer with no tabs
         keep = list(_ALL)
     set_setting("dashboard_tabs", keep)
+
+
+# ── Categorisation scheme (per customer) ─────────────────────────────────────
+# The category vocabulary is customer-specific: a flower wholesaler categorises
+# by flower type, a lab by equipment/consumables. The scheme is an instruction to
+# the local model; it lives in this instance's DB, editable per customer.
+DEFAULT_CATEGORISATION = (
+    "Categorise each line item by its product category using a short category "
+    "name. For freight, delivery, packaging or handling lines use 'Other'."
+)
+
+
+def get_categorisation_scheme() -> str:
+    return get_setting("categorisation_scheme") or DEFAULT_CATEGORISATION
+
+
+def set_categorisation_scheme(text: str) -> None:
+    set_setting("categorisation_scheme", (text or "").strip() or DEFAULT_CATEGORISATION)
