@@ -83,15 +83,14 @@ def serve_pdf(
     if "/" in supplier or "\\" in supplier or ".." in supplier:
         raise HTTPException(status_code=400, detail="Invalid supplier.")
     pdf_path = _INVOICES_DIR / supplier / filename
-    if not pdf_path.exists():
-        # Supplier slug may differ in case from the on-disk folder; resolve
-        # case-insensitively.
-        match = next(
-            (d for d in _INVOICES_DIR.iterdir() if d.is_dir() and d.name.lower() == supplier.lower()),
-            None,
-        ) if _INVOICES_DIR.exists() else None
+    if not pdf_path.exists() and _INVOICES_DIR.exists():
+        # v3 drops files under invoices/ (typically invoices/inbox/) without
+        # per-supplier folders, so fall back to a basename match anywhere below
+        # invoices/. filename is already guarded against '/', '\\' and '..', so
+        # comparing basenames is traversal-safe.
+        match = next((p for p in _INVOICES_DIR.rglob("*.pdf") if p.name == filename), None)
         if match is not None:
-            pdf_path = match / filename
+            pdf_path = match
     if not pdf_path.exists():
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(str(pdf_path), media_type="application/pdf")

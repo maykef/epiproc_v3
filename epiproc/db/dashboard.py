@@ -16,6 +16,7 @@ from collections import defaultdict
 from datetime import date as _date
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from epiproc.db.pool import pool
 from epiproc.normalisation import norm_dept
@@ -788,7 +789,7 @@ def get_dashboard_data(supplier: str) -> dict:
         d["supplier_color"] = color
         d["thumb"] = None
         filename = d.get("filename") or d.get("pdf_file") or ""
-        d["pdf_url"] = f"/pdf/{supplier}/{filename}" if filename else ""
+        d["pdf_url"] = f"/pdf/{supplier}/{quote(filename)}" if filename else ""
         invoices.append(d)
 
     items = []
