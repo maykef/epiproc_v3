@@ -2694,7 +2694,8 @@ renderSvcSection();
   let _theme='commercial', _scope='all', _focus='full', _backend='anthropic', _category='';
   let _allReports=[];
 
-  function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  // (Uses the global esc() defined above — it also escapes single quotes, so its
+  // output is safe in single-quoted attributes too. No local shadow here.)
 
   window.initReports = function(){
     if(_init){refreshReports();return;}

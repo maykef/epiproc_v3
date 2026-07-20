@@ -13,8 +13,39 @@ import yaml
 
 from epiproc.settings import settings
 
-# repo-local configs by default; a container overrides via settings.data_dir/configs
+# repo-baked configs (packaged into the image); a container overrides per-file via
+# its mounted <data_dir>/configs.
 _REPO_CONFIGS = pathlib.Path(__file__).resolve().parent.parent / "configs"
+
+
+def _mounted_configs() -> pathlib.Path:
+    return pathlib.Path(settings.data_dir) / "configs"
+
+
+def resolve_config(filename: str, configs: pathlib.Path | None = None) -> pathlib.Path | None:
+    """Resolve ONE config file, per-file: the customer's mounted copy if it exists,
+    else the repo-baked default, else None.
+
+    Per-FILE, not per-directory, on purpose. compose always mounts
+    ``<data_dir>/configs``, so the folder existing says nothing about which files
+    are in it — a customer who supplies only a supplier YAML (or nothing at all)
+    must still get the baked ``_base.yml``. An earlier all-or-nothing directory
+    switch broke exactly this: an empty mounted folder yielded a blank
+    ``extraction_prompt``. When ``configs`` is given (tests), only that directory
+    is consulted.
+    """
+    if configs is not None:
+        p = configs / filename
+        return p if p.is_file() else None
+    mounted = _mounted_configs() / filename
+    if mounted.is_file():
+        return mounted
+    repo = _REPO_CONFIGS / filename
+    return repo if repo.is_file() else None
+
+
+def _load_yaml(path: pathlib.Path | None) -> dict:
+    return (yaml.safe_load(path.read_text()) or {}) if path else {}
 
 
 @dataclass
@@ -31,32 +62,21 @@ class SupplierConfig:
 
 
 def configs_dir() -> pathlib.Path:
-    """The active config directory.
-
-    Prefer the container's mounted ``<data_dir>/configs`` when it exists, else the
-    repo-baked defaults. A customer drops per-supplier YAMLs (and ``departments.yml``)
-    into their mounted configs folder to customise extraction/normalisation without a
-    rebuild — so BOTH ingest and the dashboard must read from here, not the baked copy.
-    """
-    mounted = pathlib.Path(settings.data_dir) / "configs"
-    if mounted.is_dir():
-        return mounted
+    """The repo-baked config directory (packaged defaults). Kept for callers that
+    need a directory handle; per-FILE lookups must go through ``resolve_config()``,
+    which falls back to this directory file-by-file rather than all-or-nothing."""
     return _REPO_CONFIGS
 
 
-def _base_config(configs: pathlib.Path) -> dict:
-    """Generic fallback fields (prompts, dpi, …) from configs/_base.yml."""
-    path = configs / "_base.yml"
-    if not path.exists():
-        return {}
-    return yaml.safe_load(path.read_text()) or {}
+def _base_config(configs: pathlib.Path | None = None) -> dict:
+    """Generic fallback fields (prompts, dpi, …) from _base.yml (mounted or baked)."""
+    return _load_yaml(resolve_config("_base.yml", configs))
 
 
 def load_config(supplier: str, configs: pathlib.Path | None = None) -> SupplierConfig:
-    d = configs or configs_dir()
-    base = _base_config(d)
-    path = d / f"{supplier}.yml"
-    if not path.exists():
+    base = _base_config(configs)
+    path = resolve_config(f"{supplier}.yml", configs)
+    if path is None:
         # Blank-slate default: suppliers discovered from data need no hand-written
         # config to appear on the dashboard. Extraction uses the generic _base
         # prompts; display name is derived; credit-note totals are signed by rules.
@@ -70,7 +90,7 @@ def load_config(supplier: str, configs: pathlib.Path | None = None) -> SupplierC
             dedup_key=base.get("dedup_key", "invoice_number"),
             dashboard={"display_name": supplier.replace("_", " ").title()},
         )
-    data = yaml.safe_load(path.read_text())
+    data = yaml.safe_load(path.read_text()) or {}
     # A supplier YAML may omit any field; fall back to _base for what it leaves out.
     return SupplierConfig(
         supplier=data.get("supplier", supplier),
@@ -89,6 +109,13 @@ def load_config(supplier: str, configs: pathlib.Path | None = None) -> SupplierC
 
 
 def list_suppliers(configs: pathlib.Path | None = None) -> list[str]:
-    d = configs or configs_dir()
+    """Supplier stems from any *.yml, unioned across the customer's mounted configs
+    AND the repo-baked defaults (or just `configs` when given), so a supplier YAML
+    in either location is discovered."""
     skip = {"_base", "base_extraction_v1", "categorisation", "departments", "tier_overrides"}
-    return sorted(p.stem for p in d.glob("*.yml") if p.stem not in skip)
+    dirs = [configs] if configs is not None else [_mounted_configs(), _REPO_CONFIGS]
+    stems: set[str] = set()
+    for d in dirs:
+        if d.is_dir():
+            stems |= {p.stem for p in d.glob("*.yml") if p.stem not in skip}
+    return sorted(stems)

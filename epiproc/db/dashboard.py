@@ -19,7 +19,7 @@ from urllib.parse import quote
 
 from epiproc.db.pool import pool
 from epiproc.normalisation import norm_dept
-from epiproc.suppliers import configs_dir, list_suppliers, load_config
+from epiproc.suppliers import list_suppliers, load_config
 
 
 def get_data_quality() -> dict:
@@ -56,7 +56,6 @@ def get_data_quality() -> dict:
             "fail_files": fail_files}
 
 
-CONFIGS_DIR = configs_dir()
 
 _FALLBACK_COLOR = "#6c7cff"
 
@@ -84,7 +83,7 @@ def get_suppliers() -> list[str]:
     except Exception:
         pass
     try:
-        return list_suppliers(CONFIGS_DIR)
+        return list_suppliers()
     except Exception:
         return []
 
@@ -293,7 +292,7 @@ def _supplier_cufs(supplier: str) -> dict[str, str]:
 
 def _supplier_payer_keywords(supplier: str) -> list[str]:
     try:
-        return load_config(supplier, CONFIGS_DIR).dashboard.get("payer_fallback_keywords") or []
+        return load_config(supplier).dashboard.get("payer_fallback_keywords") or []
     except Exception:
         return []
 
@@ -314,7 +313,6 @@ def _norm_row_dept(row: dict, payer_keywords: list[str], cufs: dict[str, str]) -
         sold_to_name=row.get("sold_to_name"),
         sold_to_department=row.get("sold_to_department"),
         sold_to_address=row.get("sold_to_address"),
-        configs_dir=CONFIGS_DIR,
     )
 
 
@@ -725,7 +723,7 @@ def _slim(d: dict, keep: frozenset) -> dict:
 
 
 def get_dashboard_data(supplier: str) -> dict:
-    cfg = load_config(supplier, CONFIGS_DIR)
+    cfg = load_config(supplier)
     display_name = cfg.dashboard.get("display_name", supplier.title())
     color = _readable_color(cfg.dashboard.get("color", "#6c7cff"))
 
@@ -819,7 +817,7 @@ def _supplier_colours(suppliers: list[str]) -> dict[str, str]:
     out: dict[str, str] = {}
     i = 0
     for s in suppliers:
-        c = load_config(s, CONFIGS_DIR).dashboard.get("color")
+        c = load_config(s).dashboard.get("color")
         if not c:
             c = _SUP_PALETTE[i % len(_SUP_PALETTE)]
             i += 1
@@ -848,7 +846,7 @@ def get_multi_dashboard_data(suppliers: list[str]) -> dict:
         meta.append({"display_name": d["display_name"], "color": col})
         svc_by_sup[d["display_name"]] = d["svc"]
 
-        cfg = load_config(supplier, CONFIGS_DIR)
+        cfg = load_config(supplier)
         inv_dept_by_id = {inv["id"]: inv.get("department")
                           for inv in d["invoices"] if inv.get("id") is not None}
         _neg = [t.lower() for t in (cfg.dashboard.get("negative_document_types") or [])]

@@ -15,25 +15,22 @@ from typing import Optional
 
 import yaml
 
-# normalisation.py lives at epiproc/normalisation.py, so parents[1] is the repo
-# root and parents[1]/configs is the baked config dir (matches suppliers._REPO_CONFIGS).
-# parents[2] was one level too high — it resolved to /configs inside the image
-# (WORKDIR /app), which does not exist, so the default silently loaded zero
-# department entries. Callers wanting the customer's mounted configs still pass
-# configs_dir= explicitly (the dashboard does).
-_DEFAULT_CONFIGS_DIR = Path(__file__).resolve().parents[1] / "configs"
-_DEPT_ENTRIES_CACHE: dict[Path, list] = {}
+_DEPT_ENTRIES_CACHE: dict[str, list] = {}
 
 
 def load_dept_entries(configs_dir: Optional[Path] = None) -> list:
-    """Load and cache departments.yml entries keyed by configs_dir."""
-    cdir = (configs_dir or _DEFAULT_CONFIGS_DIR).resolve()
-    cached = _DEPT_ENTRIES_CACHE.get(cdir)
+    """Load and cache departments.yml, resolved per-file: the customer's mounted
+    copy if present, else the repo-baked copy (currently none), else empty. When
+    `configs_dir` is given (tests), only that directory is consulted. Cached by the
+    resolved path so mounted and baked don't collide."""
+    from epiproc.suppliers import resolve_config
+    path = resolve_config("departments.yml", configs_dir)
+    key = str(path) if path else "__none__"
+    cached = _DEPT_ENTRIES_CACHE.get(key)
     if cached is not None:
         return cached
-    path = cdir / "departments.yml"
-    entries = (yaml.safe_load(path.read_text()) or []) if path.exists() else []
-    _DEPT_ENTRIES_CACHE[cdir] = entries
+    entries = (yaml.safe_load(path.read_text()) or []) if path else []
+    _DEPT_ENTRIES_CACHE[key] = entries
     return entries
 
 
