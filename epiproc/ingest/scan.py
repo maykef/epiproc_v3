@@ -26,6 +26,7 @@ from epiproc.suppliers import load_config
 
 # Sub-folders that are a generic inbox, not a supplier name.
 _DROPBOX = {"inbox", "imports", "incoming", "unsorted", "invoices", ""}
+_MAX_ATTEMPTS = 3      # retry a failing file this many times before giving up (still surfaced)
 
 
 def _iter_pdfs(root: pathlib.Path):
@@ -70,7 +71,10 @@ def scan_and_process(progress=None) -> dict:  # noqa: ANN001
             st = pdf.stat()
 
             led = ingested.get(conn, path)
-            if led and led["mtime"] == st.st_mtime:
+            # Skip a file we've already handled, UNLESS it errored and still has
+            # retries left — a failed invoice must not be lost on a matching mtime.
+            if led and led["mtime"] == st.st_mtime and not (
+                    led["result"] == "error" and (led.get("attempts") or 0) < _MAX_ATTEMPTS):
                 counts["skipped"] += 1
                 continue
 
@@ -106,13 +110,17 @@ def scan_and_process(progress=None) -> dict:  # noqa: ANN001
                 counts["duplicate"] += 1
             else:  # error
                 err = (res.get("error") or "").strip()
-                # vLLM unreachable is transient — leave it unledgered so a later
-                # scan retries once the GPU server is back.
-                if "unreachable" in err.lower():
+                # Connectivity errors are transient — leave them unledgered so a
+                # later scan retries indefinitely once the GPU server is back.
+                if any(w in err.lower() for w in ("unreachable", "connection", "timeout", "timed out")):
                     counts["error"] += 1
                     _say(f"{pdf.name}: transient extract error, will retry")
                     continue
-                ingested.record(conn, path, st.st_mtime, sha, None, "error", err[:500])
+                # Non-transient: ledger with an incremented attempt count. It keeps
+                # retrying (up to _MAX_ATTEMPTS) and is surfaced as an ingest failure.
+                prev = led["attempts"] if (led and led["mtime"] == st.st_mtime) else 0
+                ingested.record(conn, path, st.st_mtime, sha, None, "error", err[:500],
+                                attempts=prev + 1)
                 counts["error"] += 1
             _say(f"{pdf.name}: {status}")
 

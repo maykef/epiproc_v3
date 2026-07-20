@@ -24,14 +24,22 @@ def sha_ingested(conn, sha: str, exclude_path: str) -> bool:  # noqa: ANN001
 
 
 def record(conn, path: str, mtime: float, sha: str,  # noqa: ANN001
-           invoice_id: int | None, result: str, message: str | None) -> None:
+           invoice_id: int | None, result: str, message: str | None,
+           attempts: int = 0) -> None:
     conn.execute(
-        """INSERT INTO ingested_files (path, mtime, sha256, invoice_id, result, message)
-           VALUES (%s, %s, %s, %s, %s, %s)
+        """INSERT INTO ingested_files (path, mtime, sha256, invoice_id, result, message, attempts)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT (path) DO UPDATE SET
              mtime = EXCLUDED.mtime, sha256 = EXCLUDED.sha256,
              invoice_id = EXCLUDED.invoice_id, result = EXCLUDED.result,
-             message = EXCLUDED.message, processed_at = now()""",
-        (path, mtime, sha, invoice_id, result, message),
+             message = EXCLUDED.message, attempts = EXCLUDED.attempts, processed_at = now()""",
+        (path, mtime, sha, invoice_id, result, message, attempts),
     )
     conn.commit()
+
+
+def failure_count(conn) -> int:  # noqa: ANN001
+    """How many files ended in a (non-transient) error — for the dashboard."""
+    return conn.execute(
+        "SELECT count(*) AS c FROM ingested_files WHERE result = 'error'"
+    ).fetchone()["c"]

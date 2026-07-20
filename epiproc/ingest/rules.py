@@ -73,7 +73,42 @@ def _derive_total(rec: dict) -> tuple[dict, str | None]:
     return rec, None
 
 
-DEFAULT_RULES = ["drop_hs_summary", "credit_note_sign", "derive_total_from_subtotal"]
+@op("reconcile_totals")
+def _reconcile_totals(rec: dict) -> tuple[dict, str | None]:
+    """Cross-check the two spend levels: sum(line_items) vs subtotal vs total.
+
+    The dashboard aggregates categories from line items but suppliers/months from
+    the invoice total. When line items don't sum to the subtotal (e.g. deposits or
+    pallets are in the total but not itemised), those views disagree. We can't know
+    which figure is 'right', so we don't silently adjust — we flag the invoice via
+    validation_warning so the mismatch is visible instead of a silent Δ on screen.
+    """
+    items = rec.get("line_items") or []
+    line_sum = sum(it["total_price"] for it in items
+                   if isinstance(it, dict) and isinstance(it.get("total_price"), (int, float)))
+    tot = rec.get("totals") or {}
+    subtotal, total = tot.get("subtotal"), tot.get("total")
+    warns: list[str] = []
+
+    def _off(a: float, b: float) -> bool:
+        return abs(a - b) > max(0.5, 0.01 * abs(b))      # 1% or 50c tolerance
+
+    if items and isinstance(subtotal, (int, float)) and _off(line_sum, subtotal):
+        warns.append(f"line items sum {line_sum:.2f} ≠ subtotal {subtotal:.2f} "
+                     f"(Δ{line_sum - subtotal:+.2f})")
+    if items and isinstance(total, (int, float)) and not isinstance(subtotal, (int, float)) \
+            and _off(line_sum, total):
+        warns.append(f"line items sum {line_sum:.2f} ≠ total {total:.2f} "
+                     f"(Δ{line_sum - total:+.2f})")
+    if not warns:
+        return rec, None
+    prior = rec.get("validation_warning")
+    rec["validation_warning"] = "; ".join(([prior] if prior else []) + warns)
+    return rec, "reconcile_totals: " + "; ".join(warns)
+
+
+DEFAULT_RULES = ["drop_hs_summary", "credit_note_sign",
+                 "derive_total_from_subtotal", "reconcile_totals"]
 
 
 def apply_rules(record: dict, cfg) -> tuple[dict, list[str]]:  # noqa: ANN001

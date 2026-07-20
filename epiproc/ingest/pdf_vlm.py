@@ -80,8 +80,10 @@ def _image_to_b64(img: Image.Image) -> str:
 
 # ── VLM call (guided JSON) ───────────────────────────────────────────────────
 def _run_page(client: OpenAI, model: str, image: Image.Image, prompt: str, max_tokens: int) -> dict:
+    import json
     b64 = _image_to_b64(image)
     last = None
+    mt = max_tokens
     for _ in range(4):
         try:
             r = client.chat.completions.create(
@@ -90,17 +92,25 @@ def _run_page(client: OpenAI, model: str, image: Image.Image, prompt: str, max_t
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
                     {"type": "text", "text": prompt},
                 ]}],
-                max_tokens=max_tokens, temperature=0.0,
+                max_tokens=mt, temperature=0.0,
                 response_format=response_format(),
                 extra_body={"top_k": 1, "chat_template_kwargs": {"enable_thinking": False}},
             )
-            content = r.choices[0].message.content
-            import json
-            return json.loads(content)   # guided decoding => always valid JSON
-        except APIConnectionError as e:
+            choice = r.choices[0]
+            # A length-truncated response is NOT valid JSON however "guided" it was;
+            # parsing it silently drops line items. Grow the budget and retry.
+            if choice.finish_reason == "length":
+                last = RuntimeError(f"response truncated at {mt} tokens")
+                mt = min(mt * 2, 16384)
+                continue
+            return json.loads(choice.message.content)
+        except APIConnectionError as e:      # vLLM unreachable — transient, back off
             last = e
             time.sleep(2)
-    raise RuntimeError(f"vLLM unreachable after retries: {last}")
+        except Exception as e:               # 500 / timeout / malformed JSON — retry a few times
+            last = e
+            time.sleep(1)
+    raise RuntimeError(f"page extraction failed after retries: {last}")
 
 
 # ── merge continuation pages (ported from v1 — the good matching logic) ───────

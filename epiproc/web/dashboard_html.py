@@ -239,11 +239,40 @@ def _tab_toggle_js() -> str:
     )
 
 
+def _data_quality_banner() -> str:
+    """A visible ingest-health strip on the Overview: failed PDFs (otherwise
+    silently missing from the dataset) and invoices that don't reconcile."""
+    from epiproc.db.dashboard import get_data_quality
+    try:
+        dq = get_data_quality()
+    except Exception:  # noqa: BLE001 — never let the banner break the dashboard
+        return ""
+    fails, warns = dq["ingest_failures"], dq["reconciliation_warnings"]
+    if not fails and not warns:
+        return ""
+    parts = []
+    if fails:
+        files = ", ".join(dq["fail_files"][:5])
+        more = "…" if len(dq["fail_files"]) > 5 else ""
+        parts.append(f'<strong>{fails} invoice PDF(s) failed to process</strong>'
+                     f'<span style="opacity:.8"> — not in the dataset: {files}{more}</span>')
+    if warns:
+        parts.append(f'<strong>{warns} invoice(s) don\'t reconcile</strong>'
+                     '<span style="opacity:.8"> — line items ≠ invoice total</span>')
+    inner = " &nbsp;·&nbsp; ".join(parts)
+    return (
+        '<div style="margin:0 0 14px;padding:10px 14px;border-radius:8px;font-size:12.5px;'
+        'background:rgba(255,159,67,.12);border:1px solid rgba(255,159,67,.45);'
+        'color:var(--text)">⚠ ' + inner + '</div>'
+    )
+
+
 def _apply(template: str, subs: dict) -> str:
     for k, v in subs.items():
         template = template.replace(k, v)
     template = template.replace("</nav>", _LOGOUT_BTN, 1)
     template = template.replace("{{INSTITUTION}}", settings.institution)
+    template = template.replace("{{DATA_QUALITY}}", _data_quality_banner())
     template = template.replace("</body>", _tab_toggle_js() + "</body>", 1)
     # Currency symbol is per-customer (the template hardcodes £). Applied after
     # substitutions so injected values (e.g. the header grand total) convert too.

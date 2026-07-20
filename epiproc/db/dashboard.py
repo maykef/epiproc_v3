@@ -32,6 +32,27 @@ def _configs_dir() -> Path:
     return _repo_configs_dir()
 
 
+def get_data_quality() -> dict:
+    """Instance-wide ingest health for the Overview banner: PDFs that failed to
+    process (would otherwise be silently absent) and invoices whose line items
+    don't reconcile to their totals."""
+    from epiproc.db import ingested
+    with pool().connection() as conn:
+        try:
+            fails = ingested.failure_count(conn)
+            fail_files = [r["path"].rsplit("/", 1)[-1] for r in conn.execute(
+                "SELECT path FROM ingested_files WHERE result='error' "
+                "ORDER BY processed_at DESC LIMIT 8").fetchall()]
+        except Exception:  # noqa: BLE001 — ledger table may not exist on an old DB
+            fails, fail_files = 0, []
+        warns = conn.execute(
+            "SELECT count(*) AS c FROM invoices "
+            "WHERE validation_warning IS NOT NULL AND validation_warning <> ''"
+        ).fetchone()["c"]
+    return {"ingest_failures": fails, "reconciliation_warnings": warns,
+            "fail_files": fail_files}
+
+
 CONFIGS_DIR = _configs_dir()
 
 _FALLBACK_COLOR = "#6c7cff"

@@ -33,9 +33,10 @@ def insert_record(conn, supplier: str, filename: str, record: dict,
             your_reference, order_reference, payment_terms,
             subtotal, discount_rate_percent, discount_amount, discount_2,
             freight, handling_charges, vat_amount, total_amount,
-            notes, corrections_applied, raw_json, extraction_error, processing_time_s, status)
+            notes, corrections_applied, validation_warning,
+            raw_json, extraction_error, processing_time_s, status)
            VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,
-                   %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s,%s,%s)
+                   %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s)
            RETURNING id""",
         (supplier, filename, rec.get("document_type"), rec.get("invoice_number"),
          rec.get("invoice_date"), rec.get("currency"),
@@ -49,6 +50,7 @@ def insert_record(conn, supplier: str, filename: str, record: dict,
          _num(tot.get("freight")), _num(tot.get("handling_charges")),
          _num(tot.get("vat_amount")), _num(tot.get("total")),
          rec.get("notes"), "; ".join(corrections) if corrections else None,
+         rec.get("validation_warning"),
          json.dumps(rec, ensure_ascii=False), error, processing_time_s, status),
     ).fetchone()
     inv_id = row["id"]

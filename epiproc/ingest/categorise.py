@@ -24,8 +24,13 @@ from epiproc.ingest.discover import ensure_categories
 from epiproc.settings import settings
 
 
+_BATCH = 25          # items per model call — keeps well inside the token budget
+_TOK_PER_ITEM = 90   # generous per-item allowance for the JSON response
+
+
 def _schema(categories: list[str]) -> dict:
-    """category is enum-constrained to the discovered vocabulary; variety is free."""
+    """Each object echoes the 1-based item 'index' so results map by index, never
+    by position; category is enum-constrained; variety is free text."""
     cat_schema = {"type": "string", "enum": categories} if categories else {"type": "string"}
     return {"type": "json_schema", "json_schema": {
         "name": "classification", "strict": True,
@@ -33,44 +38,68 @@ def _schema(categories: list[str]) -> dict:
             "type": "object",
             "properties": {"items": {"type": "array", "items": {
                 "type": "object",
-                "properties": {"category": cat_schema, "variety": {"type": "string"}},
-                "required": ["category", "variety"], "additionalProperties": False,
+                "properties": {"index": {"type": "integer"},
+                               "category": cat_schema, "variety": {"type": "string"}},
+                "required": ["index", "category", "variety"], "additionalProperties": False,
             }}},
             "required": ["items"], "additionalProperties": False,
         },
     }}
 
 
-def _categorise_descriptions(client: OpenAI, model: str, descriptions: list[str],
-                             categories: list[str], scheme: str = "") -> list[tuple[str, str]]:
+def _classify_batch(client: OpenAI, model: str, descriptions: list[str],
+                    categories: list[str], scheme: str) -> list[tuple[str, str]]:
+    """Classify one bounded batch. Maps by echoed index and VALIDATES coverage —
+    raises on truncation or missing indices rather than silently misaligning."""
+    n = len(descriptions)
     lines = "\n".join(f"{i + 1}. {d or '(no description)'}" for i, d in enumerate(descriptions))
     cat_list = ", ".join(categories) if categories else "(derive a short category name)"
     guidance = f"\nCustomer guidance: {scheme}\n" if scheme.strip() else ""
     prompt = (
         f"Classify each invoice line item below.{guidance}\n"
-        f"For each of the {len(descriptions)} items return an object with:\n"
-        f"- 'category': assign EXACTLY ONE category from this list: {cat_list}. "
-        f"Pick the single most specific one that fits; if none fits, use "
-        f"'{OTHER_CATEGORY}'.\n"
-        f"- 'variety': the specific product, model, grade or cultivar within that "
-        f"category (free text); if there is no distinct variety, repeat the category.\n"
-        f"Return JSON with an 'items' array of exactly {len(descriptions)} objects, in order."
+        f"For each of the {n} items return an object with:\n"
+        f"- 'index': the item number shown (1 to {n}).\n"
+        f"- 'category': assign EXACTLY ONE from this list: {cat_list}. Pick the single "
+        f"most specific one that fits; if none fits, use '{OTHER_CATEGORY}'.\n"
+        f"- 'variety': the specific product/model/grade/cultivar (free text); if none, "
+        f"repeat the category.\n"
+        f"Return an 'items' array of exactly {n} objects, one per index, none omitted."
         f"\n\nItems:\n{lines}"
     )
     r = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.0, max_tokens=2500,
+        temperature=0.0, max_tokens=max(512, n * _TOK_PER_ITEM),
         response_format=_schema(categories),
         extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
-    got = json.loads(r.choices[0].message.content).get("items", [])
-    got = (got + [{}] * len(descriptions))[:len(descriptions)]
-    out = []
+    choice = r.choices[0]
+    if choice.finish_reason == "length":
+        raise RuntimeError(f"categorisation truncated for a batch of {n} items")
+    got = json.loads(choice.message.content).get("items", [])
+    by_idx: dict[int, dict] = {}
     for g in got:
+        idx = g.get("index")
+        if isinstance(idx, int) and 1 <= idx <= n:
+            by_idx[idx] = g
+    if len(by_idx) != n:                      # missing/duplicate/extra -> do NOT guess alignment
+        raise RuntimeError(f"categorisation returned {len(by_idx)}/{n} valid indices")
+    out = []
+    for i in range(1, n + 1):
+        g = by_idx[i]
         cat = (g.get("category") or OTHER_CATEGORY).strip() or OTHER_CATEGORY
         var = (g.get("variety") or cat).strip() or cat
         out.append((cat, var))
+    return out
+
+
+def _categorise_descriptions(client: OpenAI, model: str, descriptions: list[str],
+                             categories: list[str], scheme: str = "") -> list[tuple[str, str]]:
+    """Classify all descriptions in bounded, index-validated batches."""
+    out: list[tuple[str, str]] = []
+    for start in range(0, len(descriptions), _BATCH):
+        batch = descriptions[start:start + _BATCH]
+        out.extend(_classify_batch(client, model, batch, categories, scheme))
     return out
 
 
