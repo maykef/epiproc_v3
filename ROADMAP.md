@@ -24,12 +24,16 @@ its own design + testing pass.
 
 ## Known minor items
 
-- **Residual DOM-XSS in dashboard template JS** — the stored-XSS fix escapes the
-  `<script>` context; VLM strings are still inserted via `innerHTML` in the
-  template's client JS (e.g. `populateSearchSuppliers`, table renderers). Sanitise
-  on insert (`textContent`/escape) to close it fully.
 - **`db/dashboard.py` size (~930 lines)** — cohesive (all dashboard data access)
   and already sectioned, so a split is pure churn with no behaviour change.
   Deliberately deferred: do it only when the file is next touched for real work
   (e.g. Reports or the pagination endpoints), not for its own sake.
 - **Reports** — parameterised report generation is in progress (see README).
+
+## Recently closed
+
+- **Dashboard XSS / CSP** — VLM-extracted strings are now HTML-escaped on every
+  DOM insertion, and the CSP dropped `script-src 'unsafe-inline'`: inline scripts
+  carry a per-request nonce and inline event handlers were replaced by delegated
+  listeners (`data-click`/`data-change`/`data-input`). `object-src`, `base-uri`
+  and `form-action` are locked down. Verified against a clone of real data.
