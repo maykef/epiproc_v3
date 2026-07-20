@@ -54,12 +54,14 @@ def _credit_note_sign(rec: dict) -> tuple[dict, str | None]:
     for k in ("subtotal", "total", "discount_amount", "vat_amount"):
         v = tot.get(k)
         if isinstance(v, (int, float)) and v > 0:
-            tot[k] = -abs(v); changed = True
+            tot[k] = -abs(v)
+            changed = True
     for it in rec.get("line_items") or []:
         for k in ("unit_price", "total_price"):
             v = it.get(k)
             if isinstance(v, (int, float)) and v > 0:
-                it[k] = -abs(v); changed = True
+                it[k] = -abs(v)
+                changed = True
     return rec, ("credit_note_sign: flipped to negative" if changed else None)
 
 

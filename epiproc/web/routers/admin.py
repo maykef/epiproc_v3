@@ -5,12 +5,14 @@ live in epiproc.db.{users,sessions,audit,usage}; email in epiproc.web.emailer.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse
+import html as _html
 from typing import Annotated
 
-from epiproc.web.auth import hash_password, generate_password, is_account_expired
-from epiproc.web.security import audit_log, _request_ip
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+from epiproc.web.auth import generate_password, hash_password, is_account_expired
+from epiproc.web.security import _request_ip, audit_log
 from epiproc.web.session import get_session_user
 from epiproc.web.templates import templates
 
@@ -95,8 +97,12 @@ def admin_users(request: Request, ok: str = "", err: str = ""):
 def admin_dashboard(request: Request, ok: str = ""):
     me = _admin(request)
     from epiproc.db.settings import (
-        DASHBOARD_TABS, get_categories, get_categorisation_scheme, get_currency_symbol,
-        get_enabled_tabs, get_price_tracker_key,
+        DASHBOARD_TABS,
+        get_categories,
+        get_categorisation_scheme,
+        get_currency_symbol,
+        get_enabled_tabs,
+        get_price_tracker_key,
     )
     enabled = get_enabled_tabs()
     return templates.TemplateResponse(request, "admin/dashboard.html", {
@@ -290,7 +296,8 @@ async def set_password(
 @router.post("/admin/users/{user_id}/toggle")
 async def toggle_user(request: Request, user_id: int):
     me = _admin(request)
-    from epiproc.db.users import get_all_users, update_user as _update
+    from epiproc.db.users import get_all_users
+    from epiproc.db.users import update_user as _update
 
     users = get_all_users()
     target = next((u for u in users if u["id"] == user_id), None)
@@ -328,7 +335,11 @@ def mfa_page(request: Request, user_id: int):
     }
 
     if not target.get("mfa_secret"):
-        import pyotp, qrcode, io, base64 as _b64
+        import base64 as _b64
+        import io
+
+        import pyotp
+        import qrcode
         secret = pyotp.random_base32()
         uri = pyotp.TOTP(secret).provisioning_uri(
             name=target["username"], issuer_name="EpiProc"
@@ -350,8 +361,8 @@ async def mfa_enroll(
     code: Annotated[str, Form()],
 ):
     me = _admin(request)
-    from epiproc.web.auth import verify_totp
     from epiproc.db.users import set_mfa_secret
+    from epiproc.web.auth import verify_totp
 
     if not verify_totp(secret, code):
         return RedirectResponse(
@@ -369,7 +380,7 @@ async def mfa_enroll(
 @router.post("/admin/users/{user_id}/mfa/revoke")
 async def mfa_revoke(request: Request, user_id: int):
     me = _admin(request)
-    from epiproc.db.users import set_mfa_secret, get_all_users
+    from epiproc.db.users import get_all_users, set_mfa_secret
     users = get_all_users()
     target = next((u for u in users if u["id"] == user_id), None)
     if not target:
@@ -387,8 +398,8 @@ async def mfa_revoke(request: Request, user_id: int):
 @router.get("/admin/users/{user_id}/sessions")
 def sessions_page(request: Request, user_id: int):
     me = _admin(request)
-    from epiproc.db.users import get_all_users
     from epiproc.db.sessions import list_active_sessions
+    from epiproc.db.users import get_all_users
     users = get_all_users()
     target = next((u for u in users if u["id"] == user_id), None)
     if not target:
@@ -406,8 +417,8 @@ def sessions_page(request: Request, user_id: int):
 @router.post("/admin/users/{user_id}/sessions/revoke-all")
 async def revoke_all_user_sessions(request: Request, user_id: int):
     me = _admin(request)
-    from epiproc.db.users import get_all_users
     from epiproc.db.sessions import revoke_all_sessions
+    from epiproc.db.users import get_all_users
     users = get_all_users()
     target = next((u for u in users if u["id"] == user_id), None)
     if not target:
@@ -447,10 +458,10 @@ def audit_log_page(
 ):
     me = _admin(request)
     from epiproc.db.audit import (
-        get_audit_log,
         count_audit_log,
-        get_audit_distinct_users,
         get_audit_distinct_actions,
+        get_audit_distinct_users,
+        get_audit_log,
     )
 
     page_size = 100
@@ -513,7 +524,7 @@ async def send_invite(request: Request, user_id: int):
 
     token = create_invite_token(user_id)
     try:
-        _send(to=email, username=target["username"], token=token)
+        link = _send(to=email, username=target["username"], token=token)
     except Exception as exc:
         return RedirectResponse(
             f"/admin/users?err={_enc(f'Email failed: {exc}')}",
@@ -522,6 +533,22 @@ async def send_invite(request: Request, user_id: int):
 
     _audit(request, me, "admin_invite_sent",
            {"target_user_id": user_id, "target_username": target["username"], "email": email})
+
+    if link:
+        # Email delivery is not configured: show the one-time link here so the
+        # operator can deliver it. Rendered in the response body (never a redirect
+        # query string) so the bearer token does not leak into access logs.
+        safe = _html.escape(link)
+        return HTMLResponse(
+            "<div style=\"font-family:system-ui;max-width:640px;margin:48px auto;"
+            "padding:24px;border:1px solid #ccc;border-radius:8px\">"
+            f"<h2>Invite created for {_html.escape(target['username'])}</h2>"
+            "<p>Email delivery is not configured, so copy this one-time link "
+            "(valid 48 hours) and send it to the user securely:</p>"
+            f"<p><code style=\"word-break:break-all\">{safe}</code></p>"
+            "<p><a href=\"/admin/users\">&larr; Back to users</a></p></div>"
+        )
+
     return RedirectResponse(
         f"/admin/users?ok={_enc(f'Invite sent to {email}.')}",
         status_code=303,

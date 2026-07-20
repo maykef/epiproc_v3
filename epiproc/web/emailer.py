@@ -26,20 +26,23 @@ def _api_key() -> str | None:
     return os.environ.get("RESEND_API_KEY")
 
 
-def send_invite(to: str, username: str, token: str) -> None:
+def send_invite(to: str, username: str, token: str) -> str | None:
     """Send a password-set invite email.
 
+    Returns None when the email was dispatched. When RESEND_API_KEY is not
+    configured the email is NOT sent and the reset URL is returned instead, so
+    the caller can surface it to the operator through a non-logged channel — the
+    raw token is deliberately never written to logs (it is a bearer credential).
     Raises RuntimeError if the Resend API returns a non-2xx status.
-    Does nothing (logs a warning) if RESEND_API_KEY is not configured.
     """
+    reset_url = f"{_PUBLIC_URL}/reset/{token}"
     key = _api_key()
     if not key:
         log.warning(
-            "RESEND_API_KEY not set — invite email not sent to %s (token: %s)", to, token
+            "RESEND_API_KEY not set — invite email not sent to %s; "
+            "returning the link for the operator to deliver manually", to
         )
-        return
-
-    reset_url = f"{_PUBLIC_URL}/reset/{token}"
+        return reset_url
 
     html = f"""
     <p>Hello,</p>

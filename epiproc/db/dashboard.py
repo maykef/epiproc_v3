@@ -21,7 +21,8 @@ from urllib.parse import quote
 from epiproc.db.pool import pool
 from epiproc.normalisation import norm_dept
 from epiproc.settings import settings
-from epiproc.suppliers import configs_dir as _repo_configs_dir, list_suppliers, load_config
+from epiproc.suppliers import configs_dir as _repo_configs_dir
+from epiproc.suppliers import list_suppliers, load_config
 
 
 def _configs_dir() -> Path:

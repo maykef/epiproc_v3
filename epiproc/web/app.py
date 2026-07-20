@@ -19,11 +19,14 @@ from epiproc import __version__
 from epiproc.db.pool import close_pool, init_pool, run_migrations
 from epiproc.settings import settings
 from epiproc.web.metrics import MetricsMiddleware, metrics_response
-from epiproc.web.security import (
-    limiter, SecurityHeadersMiddleware, AuditMiddleware, CSRFMiddleware,
-)
 from epiproc.web.routers import admin, dashboard, login, reset, usage
 from epiproc.web.routers import health as health_router
+from epiproc.web.security import (
+    AuditMiddleware,
+    CSRFMiddleware,
+    SecurityHeadersMiddleware,
+    limiter,
+)
 
 
 @asynccontextmanager

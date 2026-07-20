@@ -116,11 +116,18 @@ def poll() -> None:
                 "UPDATE jobs SET status='done', finished_at=now() WHERE id=%s AND status='running'",
                 (job["id"],),
             )
-        except NotImplementedError as e:
+        except Exception as e:  # noqa: BLE001 — a bad job must fail the JOB, never the worker
+            # Previously only NotImplementedError was caught, so any other error
+            # from _run_job crashed poll() -> the container exited -> compose
+            # restarted it -> _requeue_stuck re-queued the still-'running' job ->
+            # the same bad job retried forever. Mark it failed and keep going.
+            conn.rollback()  # discard any half-applied statement on this conn
             conn.execute(
-                "UPDATE jobs SET status='error', error=%s, finished_at=now() WHERE id=%s",
-                (str(e), job["id"]),
+                "UPDATE jobs SET status='error', error=%s, finished_at=now() "
+                "WHERE id=%s AND status='running'",
+                (str(e)[:1000], job["id"]),
             )
+            print(f"[worker] job {job['id']} ({job['job_type']}) failed: {e}", flush=True)
         conn.commit()
 
 

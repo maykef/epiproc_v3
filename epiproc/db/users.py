@@ -7,9 +7,16 @@ not persisted.
 """
 from __future__ import annotations
 
+import hashlib
 import secrets
 
 from epiproc.db.pool import pool
+
+
+def _hash_token(token: str) -> str:
+    """sha256 hex of an invite token. Only the hash is stored, so a leaked DB
+    (dump, backup, replica) yields no usable password-set link."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def get_user_by_username(username: str) -> dict | None:
@@ -94,7 +101,8 @@ def record_last_login(user_id: int) -> None:
 # ── Invite tokens ──────────────────────────────────────────────────────────────
 
 def create_invite_token(user_id: int) -> str:
-    """Create a single-use 48-hour invite token for user_id. Returns the token string."""
+    """Create a single-use 48-hour invite token for user_id. Returns the RAW token
+    (for the email link); only its hash is persisted."""
     token = secrets.token_urlsafe(32)
     with pool().connection() as conn:
         conn.execute(
@@ -102,9 +110,9 @@ def create_invite_token(user_id: int) -> str:
             (user_id,),
         )
         conn.execute(
-            """INSERT INTO invite_tokens (token, user_id, expires_at)
+            """INSERT INTO invite_tokens (token_hash, user_id, expires_at)
                VALUES (%s, %s, NOW() + interval '48 hours')""",
-            (token, user_id),
+            (_hash_token(token), user_id),
         )
     return token
 
@@ -113,13 +121,13 @@ def get_invite_token(token: str) -> dict | None:
     """Return the token row if it exists, is unused, and has not expired."""
     with pool().connection() as conn:
         row = conn.execute(
-            """SELECT t.token, t.user_id, t.expires_at, t.used, u.username, u.email
+            """SELECT t.user_id, t.expires_at, t.used, u.username, u.email
                FROM invite_tokens t
                JOIN users u ON u.id = t.user_id
-               WHERE t.token = %s
+               WHERE t.token_hash = %s
                  AND t.used = FALSE
                  AND t.expires_at > NOW()""",
-            (token,),
+            (_hash_token(token),),
         ).fetchone()
     return dict(row) if row else None
 
@@ -130,9 +138,9 @@ def consume_invite_token(token: str, new_password_hash: str) -> bool:
         row = conn.execute(
             """UPDATE invite_tokens
                SET used = TRUE
-               WHERE token = %s AND used = FALSE AND expires_at > NOW()
+               WHERE token_hash = %s AND used = FALSE AND expires_at > NOW()
                RETURNING user_id""",
-            (token,),
+            (_hash_token(token),),
         ).fetchone()
         if row is None:
             return False

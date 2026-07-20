@@ -114,7 +114,7 @@ def ensure_categories(progress=None, hint: str = "", force: bool = False) -> lis
     Returns the resulting category list. Safe to call every scan: it only hits the
     model when the vocabulary is missing or a re-derive is explicitly requested.
     """
-    from epiproc.db.settings import get_categories, get_categorisation_scheme, set_categories
+    from epiproc.db.settings import get_categories, get_categorisation_scheme
     if not force and get_categories():
         return get_categories()
     client = OpenAI(base_url=settings.vllm_url, api_key="none")

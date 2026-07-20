@@ -11,10 +11,13 @@ The engine image is data-free; each `new` creates ONE customer's data container.
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import secrets
 
-BASE = pathlib.Path("/mnt/nvme8tb/customers")
+# Where customer instance folders live. Overridable so the CLI isn't pinned to
+# one host's layout; defaults to the current deployment's path.
+BASE = pathlib.Path(os.environ.get("EPIPROC_CUSTOMERS_DIR", "/mnt/nvme8tb/customers"))
 
 
 def cmd_new(args: argparse.Namespace) -> None:

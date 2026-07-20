@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
+import os
 import secrets
 from urllib.parse import parse_qs
 
@@ -20,6 +22,8 @@ from starlette.responses import Response as StarletteResponse
 
 from epiproc.web.session import COOKIE_NAME, COOKIE_SECURE, session_key
 
+log = logging.getLogger(__name__)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CSRF — synchronizer token (double-submit cookie pattern)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -27,8 +31,13 @@ from epiproc.web.session import COOKIE_NAME, COOKIE_SECURE, session_key
 CSRF_COOKIE = "ds_csrf"
 
 _CSRF_SAFE = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
-# Routes exempt from CSRF validation (pre-session or safe by other means)
-_CSRF_EXEMPT = frozenset({"/login", "/health"})
+# Routes exempt from CSRF validation (pre-session or safe by other means).
+# /usage/events is a non-state-changing, auth-gated analytics sink written by a
+# page-exit navigator.sendBeacon() — which cannot set an X-CSRF-Token header, so
+# with CSRF enforced the exit beacon was always 403'd and that data was lost.
+# Forging analytics events is nuisance-only, so exempting it is an acceptable
+# trade for not silently dropping page-exit telemetry.
+_CSRF_EXEMPT = frozenset({"/login", "/health", "/usage/events"})
 
 
 def _make_csrf_token(request: Request) -> str:
@@ -109,7 +118,10 @@ def audit_log(
                 ),
             )
     except Exception:
-        pass
+        # An audit write is a compliance record — do not let a failure break the
+        # request, but never swallow it silently either. Surface it to the logs so
+        # a broken audit trail is detectable.
+        log.exception("audit_log write failed for action=%s username=%s", action, username)
 
 
 def _request_username(request: Request) -> str:
@@ -120,8 +132,20 @@ def _request_username(request: Request) -> str:
     return "anonymous"
 
 
+# X-Forwarded-For is client-supplied and trivially spoofable unless a trusted
+# reverse proxy sets it. Trust it only when explicitly told we are behind one
+# (EPIPROC_TRUST_XFF); otherwise use the real socket peer so audit-logged IPs
+# can't be forged by any client.
+_TRUST_XFF = os.environ.get("EPIPROC_TRUST_XFF", "").strip().lower() in ("1", "true", "yes")
+
+
 def _request_ip(request: Request) -> str:
-    return request.headers.get("x-forwarded-for", request.client.host if request.client else "unknown")
+    peer = request.client.host if request.client else "unknown"
+    if _TRUST_XFF:
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            return xff.split(",")[0].strip()  # first hop = original client
+    return peer
 
 
 # ─────────────────────────────────────────────────────────────────────────────

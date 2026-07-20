@@ -23,7 +23,6 @@ from epiproc.db.settings import (
 from epiproc.ingest.discover import ensure_categories
 from epiproc.settings import settings
 
-
 _BATCH = 25          # items per model call — keeps well inside the token budget
 _TOK_PER_ITEM = 90   # generous per-item allowance for the JSON response
 

@@ -89,8 +89,8 @@ def verify_mfa_cookie(value: str, max_age: int = 300) -> str | None:
 
 def get_session_user(request: Request) -> dict:
     """Return user dict from DB-backed session, or raise 307 redirect to /login."""
-    from epiproc.web.auth import is_account_expired
     from epiproc.db.sessions import get_session_with_user, touch_session
+    from epiproc.web.auth import is_account_expired
     cookie = request.cookies.get(COOKIE_NAME)
     if not cookie:
         raise HTTPException(status_code=307, headers={"Location": "/login"})

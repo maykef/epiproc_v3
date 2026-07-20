@@ -15,7 +15,6 @@ from typing import Optional
 
 import yaml
 
-
 _DEFAULT_CONFIGS_DIR = Path(__file__).resolve().parents[2] / "configs"
 _DEPT_ENTRIES_CACHE: dict[Path, list] = {}
 

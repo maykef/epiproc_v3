@@ -8,8 +8,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
+from epiproc.db.users import consume_invite_token, get_invite_token
 from epiproc.web.auth import hash_password
-from epiproc.db.users import get_invite_token, consume_invite_token
 from epiproc.web.templates import templates
 
 router = APIRouter(tags=["reset"])

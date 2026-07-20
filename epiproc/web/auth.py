@@ -74,7 +74,7 @@ def verify_totp(secret: str, code: str) -> bool:
 
 
 def authenticate(username: str, password: str) -> dict | None:
-    from epiproc.db.users import get_user_by_username, update_user_password, record_last_login
+    from epiproc.db.users import get_user_by_username, record_last_login, update_user_password
     user = get_user_by_username(username)
     if not user:
         return None

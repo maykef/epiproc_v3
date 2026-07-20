@@ -12,11 +12,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
-from epiproc.web.security import limiter, RATE_DASHBOARD
-from epiproc.web.session import get_session_user
-from epiproc.web.dashboard_html import build_dashboard_html, build_multi_dashboard_html
 from epiproc.db.dashboard import get_suppliers
 from epiproc.settings import settings
+from epiproc.web.dashboard_html import build_dashboard_html, build_multi_dashboard_html
+from epiproc.web.security import RATE_DASHBOARD, limiter
+from epiproc.web.session import get_session_user
 
 _INVOICES_DIR = Path(settings.data_dir) / "invoices"
 
@@ -82,12 +82,26 @@ def serve_pdf(
         raise HTTPException(status_code=400, detail="Invalid filename.")
     if "/" in supplier or "\\" in supplier or ".." in supplier:
         raise HTTPException(status_code=400, detail="Invalid supplier.")
+    # Authorisation anchor: the (supplier, filename) pair must be a real invoice
+    # owned by THIS supplier. The `allowed` check above only guards the URL's
+    # supplier segment; without this the basename fallback below would serve ANY
+    # supplier's PDF to anyone who can name the file (IDOR) — v3 stores files
+    # under invoices/inbox/, so the per-supplier path never exists and the
+    # fallback would otherwise match by basename across every supplier's files.
+    from epiproc.db.pool import pool
+    with pool().connection() as conn:
+        owned = conn.execute(
+            "SELECT 1 FROM invoices WHERE supplier = %s AND filename = %s LIMIT 1",
+            (supplier, filename),
+        ).fetchone()
+    if not owned:
+        raise HTTPException(status_code=404, detail="File not found.")
     pdf_path = _INVOICES_DIR / supplier / filename
     if not pdf_path.exists() and _INVOICES_DIR.exists():
         # v3 drops files under invoices/ (typically invoices/inbox/) without
         # per-supplier folders, so fall back to a basename match anywhere below
-        # invoices/. filename is already guarded against '/', '\\' and '..', so
-        # comparing basenames is traversal-safe.
+        # invoices/. Safe now that the (supplier, filename) pairing is authorised
+        # against the DB above; filename is guarded against '/', '\\' and '..'.
         match = next((p for p in _INVOICES_DIR.rglob("*.pdf") if p.name == filename), None)
         if match is not None:
             pdf_path = match

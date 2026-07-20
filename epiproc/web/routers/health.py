@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 
 from epiproc.db.pool import pool
 from epiproc.settings import settings
-from epiproc.web.metrics import set_vllm_healthy, set_active_sessions, set_invoices_total
+from epiproc.web.metrics import set_active_sessions, set_invoices_total, set_vllm_healthy
 
 router = APIRouter(tags=["health"])
 
