@@ -1916,18 +1916,15 @@ renderItems();
 function renderSvcSection(){
   if(!SVC || !SVC.items || !SVC.items.length) return;
 
-  const TIER_PAL = {'Protect Premium':'#6c7cff','Protect Advanced':'#4ecdc4',
-                     'Protect Preventive':'#ffe66d','SMA (Software)':'#c77dff',
-                     'PremiumPlus':'#c0392b','PremiumCare':'#e67e22',
-                     'AdvancedCare':'#f39c12','StandardCare':'#27ae60',
-                     'Bronze':'#7f8c8d','Silver':'#95a5a6','Silver/Bronze':'#8d9ea6','Gold':'#f1c40f',
-                     'Signature Plus':'#e74c3c','Platinum':'#9b59b6',
-                     'Assure':'#3498db','Maintain':'#1abc9c',
-                     'Call-Out':'#e67e22','Installation':'#95a5a6',
-                     'Labour & Repairs':'#d35400',
-                     'Gold Warranty':'#f39c12','Extended Warranty':'#2ecc71',
-                     'AB Assurance':'#16a085','ORINT':'#8e44ad',
-                     'Service Agreement':'#bdc3c7'};
+  // Colour every service tier PRESENT IN THE DATA from the neutral categorical
+  // palette — no hardcoded (supplier-specific) tier names in the engine image.
+  const TIER_PAL = {};
+  (function(){
+    const seen=[];
+    (SVC.items||[]).forEach(i=>{const t=i.tier||'Unknown'; if(!seen.includes(t))seen.push(t);});
+    (SVC.products||[]).forEach(p=>{const t=p.tier||'Unknown'; if(!seen.includes(t))seen.push(t);});
+    seen.forEach((t,i)=>TIER_PAL[t]=CAT_PAL[i%CAT_PAL.length]);
+  })();
 
   // KPIs
   const totalLines = SVC.items.length;

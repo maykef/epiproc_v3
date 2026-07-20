@@ -414,85 +414,6 @@ def _dash_cat_supplier(items: list[dict], display_name: str) -> list[dict]:
     return [{"cat": k, "sup": display_name, "total": _r(v)} for k, v in agg.items()]
 
 
-def _classify_svc_tier(desc: str, article: str) -> str:
-    d = (desc or "").lower()
-    a = (article or "")
-    if "secure" in d:
-        return "SECURE"
-    if "preferred" in d:
-        return "Preferred"
-    if d.startswith("essential") or " essential " in d:
-        return "Essential"
-    if "avizo" in d and any(x in d for x in ("maint", "maintenance")):
-        return "Software Maintenance"
-    if any(x in d for x in ("protect premium", "protect_premium")):
-        return "Protect Premium"
-    for pfx in ("000000-1912-", "000000-2024-", "000000-2030-", "000000-2039-",
-                 "000000-2043-", "000000-2314-", "000000-2701-", "000000-2580-",
-                 "000000-1842-", "000000-1907-", "000000-2483-"):
-        if a.startswith(pfx):
-            return "Protect Premium"
-    if a in ("700003", "700004"):
-        return "Protect Premium"
-    if any(x in d for x in ("protect advanced", "protect_advanced")):
-        return "Protect Advanced"
-    for pfx in ("000000-1910-09", "000000-1910-10", "000000-1910-12"):
-        if a.startswith(pfx):
-            return "Protect Advanced"
-    if any(x in d for x in ("protect preventive", "protect_preventive")):
-        return "Protect Preventive"
-    for pfx in ("000000-1909-", "000000-1940-", "000000-2555-"):
-        if a.startswith(pfx):
-            return "Protect Preventive"
-    if "sma fee" in d or a.startswith("410139"):
-        return "SMA (Software)"
-    if any(x in d for x in ("signature plus", "signature_plus")):
-        return "Signature Plus"
-    if any(x in d for x in ("platinum contract", "platinum service")):
-        return "Platinum"
-    if "assure service plan" in d:
-        return "Assure"
-    if "maintain service plan" in d:
-        return "Maintain"
-    if any(x in d for x in ("gold contract", "gold service plan")) or \
-            (a.startswith("AWSY") and "gold" in d):
-        return "Gold"
-    if a == "SV000066" or "call out charge" in d or "call-out charge" in d:
-        return "Call-Out"
-    if a == "SV000009" or "de installation" in d or "reinstallation" in d or \
-            ("installation" in d and "re installation" in d):
-        return "Installation"
-    if a.startswith("SV0000") or "service repair labor" in d or "service travel" in d or \
-            "administration time" in d or "administration fee" in d or "service f.o.c" in d:
-        return "Labour & Repairs"
-    if a.startswith("9PL_") or a.startswith("9PLUS_") or \
-            any(x in d for x in ("premiumplus", "premium plus")):
-        return "PremiumPlus"
-    if a.startswith("9FULL_LL_") or a.startswith("9LASP") or \
-            any(x in d for x in ("premiumcare", "premium care")):
-        return "PremiumCare"
-    if a.startswith("9EXPM_") or any(x in d for x in ("advancedcare", "advanced care")):
-        return "AdvancedCare"
-    if a.startswith("9PM_LL_") or any(x in d for x in ("standardcare", "standard care")):
-        return "StandardCare"
-    if any(x in d for x in ("silver service", "silver contract", "silver / bronze")):
-        return "Silver"
-    if a in ("9SMVEND",) or a.startswith("9PM_BOND") or "bronze" in d:
-        return "Bronze"
-    if a.startswith("9FULL_BOND") or a.startswith("9FULL_AUTOCUT") or "gold service" in d:
-        return "Gold"
-    if "gold warranty" in d or a.startswith("LUMGLD"):
-        return "Gold Warranty"
-    if any(x in d for x in ("ext warr", "extended warranty", " ew,", " ew ")):
-        return "Extended Warranty"
-    if any(x in d for x in ("ab assurance", "ab maintenance")) or \
-            (a.startswith("SC") and "plan period" in d) or a.startswith("ZG11"):
-        return "AB Assurance"
-    if "orint" in d:
-        return "ORINT"
-    return ""
-
-
 def _dash_svc(items: list[dict]) -> dict:
     today = _date.today().isoformat()
     svc_items_raw = [it for it in items if (it.get("category") or "") == "Service Contracts"]
@@ -503,9 +424,9 @@ def _dash_svc(items: list[dict]) -> dict:
         drp = it.get("discount_rate_percent")
         if drp and drp > 0:
             disc_pct = round(float(drp), 2)
+        # Tier comes from the invoice's own service_tier field (per-tenant data);
+        # unset -> "Unknown" in the aggregation below. No hardcoded supplier ladder.
         tier = (it.get("service_tier") or "").strip()
-        if not tier:
-            tier = _classify_svc_tier(it.get("description") or "", it.get("article") or "")
         items_list.append({
             "article": it.get("article") or "",
             "desc": it.get("description") or "",
