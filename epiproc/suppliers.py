@@ -32,25 +32,44 @@ def configs_dir() -> pathlib.Path:
     return _REPO_CONFIGS
 
 
+def _base_config(configs: pathlib.Path) -> dict:
+    """Generic fallback fields (prompts, dpi, …) from configs/_base.yml."""
+    path = configs / "_base.yml"
+    if not path.exists():
+        return {}
+    return yaml.safe_load(path.read_text()) or {}
+
+
 def load_config(supplier: str, configs: pathlib.Path | None = None) -> SupplierConfig:
     d = configs or _REPO_CONFIGS
+    base = _base_config(d)
     path = d / f"{supplier}.yml"
     if not path.exists():
         # Blank-slate default: suppliers discovered from data need no hand-written
-        # config to appear on the dashboard. Extraction uses the generic engine;
-        # display name is derived; credit-note totals are already signed at extract.
+        # config to appear on the dashboard. Extraction uses the generic _base
+        # prompts; display name is derived; credit-note totals are signed by rules.
         return SupplierConfig(
-            supplier=supplier, extraction_prompt="", continuation_prompt="",
+            supplier=supplier,
+            extraction_prompt=base.get("extraction_prompt", ""),
+            continuation_prompt=base.get("continuation_prompt",
+                                         base.get("extraction_prompt", "")),
+            pdf_dpi=int(base.get("pdf_dpi", 100)),
+            max_tokens=int(base.get("max_tokens", 4096)),
+            dedup_key=base.get("dedup_key", "invoice_number"),
             dashboard={"display_name": supplier.replace("_", " ").title()},
         )
     data = yaml.safe_load(path.read_text())
+    # A supplier YAML may omit any field; fall back to _base for what it leaves out.
     return SupplierConfig(
         supplier=data.get("supplier", supplier),
-        extraction_prompt=data.get("extraction_prompt", ""),
-        continuation_prompt=data.get("continuation_prompt", data.get("extraction_prompt", "")),
-        pdf_dpi=int(data.get("pdf_dpi", 100)),
-        max_tokens=int(data.get("max_tokens", 4096)),
-        dedup_key=data.get("dedup_key", "invoice_number"),
+        extraction_prompt=data.get("extraction_prompt", base.get("extraction_prompt", "")),
+        continuation_prompt=data.get(
+            "continuation_prompt",
+            data.get("extraction_prompt",
+                     base.get("continuation_prompt", base.get("extraction_prompt", "")))),
+        pdf_dpi=int(data.get("pdf_dpi", base.get("pdf_dpi", 100))),
+        max_tokens=int(data.get("max_tokens", base.get("max_tokens", 4096))),
+        dedup_key=data.get("dedup_key", base.get("dedup_key", "invoice_number")),
         dashboard=data.get("dashboard", {}) or {},
         rules=data.get("rules", []) or [],
         raw=data,
@@ -59,5 +78,5 @@ def load_config(supplier: str, configs: pathlib.Path | None = None) -> SupplierC
 
 def list_suppliers(configs: pathlib.Path | None = None) -> list[str]:
     d = configs or _REPO_CONFIGS
-    skip = {"base_extraction_v1", "categorisation", "departments", "tier_overrides"}
+    skip = {"_base", "base_extraction_v1", "categorisation", "departments", "tier_overrides"}
     return sorted(p.stem for p in d.glob("*.yml") if p.stem not in skip)

@@ -6,7 +6,7 @@
 {{CSRF_INJECT}}
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
-<title>Hogwarts School of Witchcraft and Wizardry – Supplier Spend Analysis</title>
+<title>{{INSTITUTION}} – Supplier Spend Analysis</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
@@ -178,7 +178,7 @@ tr:hover td{background:rgba(108,124,255,.06);}
     <rect width="26" height="26" rx="6" fill="#6c7cff22"/>
     <path d="M5 19l4-8 4 5 3-4 5 7" stroke="#6c7cff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
-  <h1>Hogwarts School of Witchcraft and Wizardry — {{SUP_TITLE}}</h1>
+  <h1>{{INSTITUTION}} — {{SUP_TITLE}}</h1>
   <div class="sub">{{HEADER_SUB}}</div>
   <div class="sub" style="font-size:10px;opacity:0.5">Data loaded: {{LOAD_TIME}}</div>
 </header>
@@ -207,17 +207,14 @@ tr:hover td{background:rgba(108,124,255,.06);}
   <div id="search-panel">
     <div id="search-head">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input id="search-input" type="text" placeholder="e.g.  confocal maintenance   ·   filter set repair   ·   service contract SP8   ·   lamp replacement">
+      <input id="search-input" type="text" placeholder="Search all invoice line items…">
       <button id="search-csv-btn" onclick="downloadSearchCSV()" style="display:none;background:var(--surf2);border:1px solid var(--border);color:var(--muted);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;white-space:nowrap">↓ CSV</button>
       <button id="search-close" onclick="closeSearch()">✕</button>
     </div>
     <div id="search-filters">
+      <!-- Populated per tenant from SUP_KEYS/SUP_NAMES by populateSearchSuppliers() -->
       <select id="sf-supplier">
         <option value="">All suppliers</option>
-        <option value="leica">Leica</option>
-        <option value="zeiss">Zeiss</option>
-        <option value="life_technologies">Life Technologies</option>
-        <option value="nikon">Nikon</option>
       </select>
       <input id="sf-min" type="number" placeholder="Min £" style="width:80px">
       <input id="sf-max" type="number" placeholder="Max £" style="width:80px">
@@ -780,6 +777,17 @@ const CAT_SUPPLIER = {{CAT_SUPPLIER_JSON}};
 const SUP_NAMES  = {{SUP_NAMES_JSON}};
 const SUP_COLORS = {{SUP_COLORS_JSON}};
 const SUP_KEYS   = {{SUP_KEYS_JSON}};   // internal supplier keys, parallel to SUP_NAMES
+
+// Fill the semantic-search supplier filter from THIS tenant's real suppliers
+// (no hardcoded names — the engine image is data-free).
+function populateSearchSuppliers(){
+  const sel=document.getElementById('sf-supplier');
+  if(!sel) return;
+  const keys=(typeof SUP_KEYS!=='undefined'&&SUP_KEYS.length)?SUP_KEYS:SUP_NAMES;
+  sel.innerHTML='<option value="">All suppliers</option>'+
+    keys.map((k,i)=>`<option value="${k}">${SUP_NAMES[i]||k}</option>`).join('');
+}
+populateSearchSuppliers();
 
 // ── Static palette constants (no data dependency) ──────────────────────────
 const CAT_PAL  = ['#6c7cff','#4ecdc4','#ff9f43','#ff6b6b','#56cf8e','#ffe66d',

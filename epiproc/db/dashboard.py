@@ -450,9 +450,9 @@ def _classify_svc_tier(desc: str, article: str) -> str:
         return "Signature Plus"
     if any(x in d for x in ("platinum contract", "platinum service")):
         return "Platinum"
-    if any(x in d for x in ("assure service plan", "revvity assure")):
+    if "assure service plan" in d:
         return "Assure"
-    if any(x in d for x in ("maintain service plan", "revvity maintain")):
+    if "maintain service plan" in d:
         return "Maintain"
     if any(x in d for x in ("gold contract", "gold service plan")) or \
             (a.startswith("AWSY") and "gold" in d):

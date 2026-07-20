@@ -136,8 +136,9 @@ Operational end-to-end and running on a first production customer instance
 | Web / authentication / administration / dashboard plane | ✅ done |
 | Per-customer settings (tabs, currency, price-tracker mode, scheme) + **Admin → Dashboard** editor | ✅ done |
 | Dashboard: spend intel, price tracker, Service/Reagents Intel, drill-downs, treemap | ✅ done |
-| `ingest/dedup.py`, `ingest/verify.py` | copied from v1, not yet wired into the job pipeline |
-| Process invoices **as a queue job** (worker handles `categorise`, not yet `extract`/`onboard`) | pending |
+| **Auto-processing** — worker scans `invoices/` on a timer, runs extract → rules → dedup → store → categorise; also an `extract` job + Admin button | ✅ done |
+| **Dedup** — by `invoice_number` (pipeline) + content hash & `ingested_files` ledger (scan); idempotent, GPU-safe re-scans | ✅ done |
+| Verify — light non-blocking status check wired; full v1 C0–C5 checks pending port (`legacy/verify_v1_sqlite.py`) | partial |
 | **Reports** engine (`epiproc/reports/`, `/reports` router, report jobs) | not built (P4) |
 | Extraction truncation-retry; production hardening (secure cookies, self-service password reset); tests/CI | pending |
 

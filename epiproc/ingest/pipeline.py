@@ -1,32 +1,87 @@
-"""Orchestrator: chain the ingest stages for one PDF and one batch.
+"""Orchestrator: chain the ingest stages for one PDF.
 
-This is the single place the pipeline order lives (v1 spread it across the
-Prefect flow + the extractor's main()). No Prefect, no docker-in-docker — this
-runs in-process in the worker.
+The single place the pipeline order lives (v1 spread it across the Prefect flow +
+the extractor's main()). No Prefect, no docker-in-docker — this runs in-process in
+the worker:
+
+    extract -> rules -> dedup (by invoice_number) -> verify -> insert
+
+Categorisation runs as a separate batch after a scan (see ingest/scan.py) so a
+whole folder is classified in one pass rather than per file.
 """
 from __future__ import annotations
 
 import pathlib
+import re
 
-from epiproc.ingest import categorise, pdf_vlm, rules
+from epiproc.db.invoices import insert_record
+from epiproc.ingest import pdf_vlm, rules
+from epiproc.settings import settings
 
 
-def process_pdf(pdf_path: pathlib.Path, cfg, client, conn) -> dict:  # noqa: ANN001
-    """dedup (caller) -> extract -> rules -> insert -> verify -> categorise.
+# Legal-form suffixes stripped so "MM Flowers Europe B.V." and "MM Flowers Europe"
+# collapse to one supplier key instead of two. "b_v" is what "B.V." slugifies to.
+_SUFFIX_RE = re.compile(
+    r"_(b_v|bv|ltd|limited|plc|llc|inc|co|gmbh|ag|sa|nv|srl|oy|as|kg|spa)$")
 
-    STUB wiring: shows the intended call graph so the worker has a contract to
-    call. Each referenced stage is built in P2/P3.
+
+def slug_supplier(name: str | None) -> str | None:
+    """"W. Tuning Bloemenexport" -> "w_tuning_bloemenexport" (matches existing data)."""
+    if not name:
+        return None
+    s = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+    prev = None
+    while s and s != prev:                 # strip stacked suffixes, e.g. "..._co_ltd"
+        prev = s
+        s = _SUFFIX_RE.sub("", s)
+    return s or None
+
+
+def _verify(record: dict) -> str:
+    """Light sanity check -> row status. Full C0-C5 checks are a later port.
+
+    'review' flags a row a human should look at (nothing extracted); everything
+    else is 'extracted'. Non-blocking: the row is always stored.
     """
-    res = pdf_vlm.extract_invoice(pdf_path, cfg, client)
+    items = record.get("line_items") or []
+    total = (record.get("totals") or {}).get("total")
+    if not items and total is None:
+        return "review"
+    return "extracted"
+
+
+def process_pdf(pdf_path: pathlib.Path, cfg, client, conn,  # noqa: ANN001
+                model: str | None = None, supplier_hint: str | None = None) -> dict:
+    """Extract one PDF, correct it, dedup it, and store it.
+
+    Returns a dict with status ∈ {ingested, duplicate, error}. `duplicate` means
+    an invoice with the same invoice_number is already stored (a re-sent PDF, or
+    the same document under a different filename) — nothing is inserted.
+    """
+    model = model or settings.vllm_model
+    res = pdf_vlm.extract_invoice(pdf_path, cfg, client, model)
     if res.error or res.data is None:
         return {"filename": pdf_path.name, "status": "error", "error": res.error}
+
     record, notes = rules.apply_rules(res.data, cfg)
-    # insert record + items -> invoices/invoice_items  (P2)
-    # verify (checks.py C0-C5)                          (port)
-    # categorise.categorise_invoice(...)                (P3)
-    return {"filename": pdf_path.name, "status": "extracted", "corrections": notes}
+    seller = (record.get("seller") or {}).get("name")
+    supplier = supplier_hint or slug_supplier(seller) or cfg.supplier or "unknown"
+    invoice_number = record.get("invoice_number")
 
+    # Dedup by invoice_number across the whole DB: the same document can arrive as
+    # "IN022490.pdf" and "IN022490 (1).pdf" — both carry invoice_number IN022490.
+    if invoice_number:
+        dup = conn.execute(
+            "SELECT supplier, filename FROM invoices "
+            "WHERE invoice_number = %s AND invoice_number IS NOT NULL LIMIT 1",
+            (invoice_number,),
+        ).fetchone()
+        if dup and dup["filename"] != pdf_path.name:
+            return {"filename": pdf_path.name, "status": "duplicate",
+                    "invoice_number": invoice_number, "supplier": supplier,
+                    "of": dup["filename"]}
 
-def process_folder(supplier: str, cfg, client, conn, progress_cb=None) -> dict:  # noqa: ANN001
-    """Scan <data_dir>/invoices/<supplier>/*.pdf and process each. STUB."""
-    raise NotImplementedError("process_folder — P2 build")
+    status = _verify(record)
+    inv_id = insert_record(conn, supplier, pdf_path.name, record, notes, status=status)
+    return {"filename": pdf_path.name, "status": "ingested", "invoice_id": inv_id,
+            "supplier": supplier, "invoice_number": invoice_number, "corrections": notes}

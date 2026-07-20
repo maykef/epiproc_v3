@@ -1,0 +1,39 @@
+# Generic extraction config — the default for any supplier without its own YAML.
+#
+# v3 constrains the model with a strict JSON schema (ingest/schema.py via
+# response_format), so these prompts only need to guide *content*, not describe
+# the JSON shape. A supplier-specific configs/<supplier>.yml may override any of
+# these fields; anything it omits falls back here.
+supplier: _base
+pdf_dpi: 100
+max_tokens: 4096
+dedup_key: invoice_number
+
+dashboard:
+  display_name: "Generic"
+
+extraction_prompt: |
+  You are extracting structured data from a supplier INVOICE or CREDIT NOTE.
+  Read the entire page image carefully and return the invoice data.
+
+  Rules:
+  - Provide every field in the schema; use null for anything not present on the page.
+  - document_type: copy what is printed ("Invoice", "Credit Note", "Proforma", ...).
+  - Dates as YYYY-MM-DD.
+  - Money as plain numbers: no currency symbols, no thousands separators, a dot for decimals.
+  - discount_amount is always a positive number.
+  - line_items: one object per product or charge line. Capture position (the line
+    number), article/SKU code, quantity, unit, description, unit_price, total_price,
+    and any per-line discount. Keep the article code and the human-readable
+    description in their own fields; if only one is printed, put it in description.
+  - totals: capture subtotal, discounts, freight/handling, VAT and the grand total
+    exactly as printed on the document.
+
+continuation_prompt: |
+  This is a CONTINUATION page of the SAME invoice. Extract ONLY what appears on
+  THIS page.
+  - Return any additional line_items found here, with the same fields. Do NOT
+    repeat line items already listed on earlier pages.
+  - If totals (subtotal, VAT, grand total) are printed on this page, return them;
+    otherwise use null.
+  - Use null for header fields (seller, buyer, dates) that are not repeated here.

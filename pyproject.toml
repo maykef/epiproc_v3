@@ -1,8 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "epiproc"
 version = "3.0.0"
-description = "EpiProc v3 — self-sufficient procurement engine (engine-in-a-box)"
+description = "EpiProc Atlas — self-sufficient procurement engine (engine-in-a-box)"
 requires-python = ">=3.11"
+# This list is the SINGLE source of truth for runtime deps. The Docker image
+# installs the project itself (`pip install .`) rather than re-typing the list,
+# so the image and pyproject can no longer drift.
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
@@ -17,7 +24,8 @@ dependencies = [
     "pyotp>=2.9",
     "qrcode[pil]>=8",
     "openai>=1.30",
-    "anthropic>=0.40",
+    "httpx>=0.27",              # used directly by web/emailer.py
+    "slowapi>=0.1.9",           # rate limiting in web/app.py + security.py
     "pymupdf>=1.24",
     "pillow>=10",
     "prometheus-client>=0.20",
@@ -28,6 +36,12 @@ test = ["pytest>=8", "pytest-cov", "ruff", "httpx"]
 
 [project.scripts]
 epiproc = "cli:main"
+
+[tool.setuptools]
+py-modules = ["cli"]
+
+[tool.setuptools.packages.find]
+include = ["epiproc*"]
 
 [tool.ruff]
 target-version = "py311"

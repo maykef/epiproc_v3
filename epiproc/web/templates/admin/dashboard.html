@@ -63,4 +63,18 @@
     <span style="color:var(--muted);font-size:11px;margin-left:8px">Runs in the background on the local model.</span>
   </form>
 </div>
+
+<div class="card">
+  <h2>Process invoices</h2>
+  <p style="color:var(--muted);font-size:12px;line-height:1.6">
+    Drop PDFs into the instance's <code>invoices/</code> folder and the engine
+    picks them up automatically (scan → extract → categorise). Use this button to
+    process new files immediately instead of waiting for the next automatic scan.
+  </p>
+  <form method="post" action="/admin/dashboard/process"
+        onsubmit="return confirm('Scan the invoices folder and extract any new PDFs now?')">
+    <button type="submit" class="btn">⤓ Scan &amp; process invoices now</button>
+    <span style="color:var(--muted);font-size:11px;margin-left:8px">Idempotent — already-processed files are skipped.</span>
+  </form>
+</div>
 {% endblock %}

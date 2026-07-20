@@ -151,6 +151,17 @@ def admin_dashboard_recategorise(request: Request):
     return RedirectResponse(f"/admin/dashboard?ok={_enc('Re-categorisation queued (job ' + jid[:8] + '). Refresh the dashboard in a moment.')}", status_code=303)
 
 
+@router.post("/admin/dashboard/process")
+def admin_dashboard_process(request: Request):
+    """Manually kick a scan of the invoices folder. The worker also does this
+    automatically on a timer, so this is only for 'process my new PDFs right now'."""
+    me = _admin(request)
+    from epiproc.db.jobs import create_job
+    jid = create_job("extract", {})
+    _audit(request, me, "admin_process", {"job_id": jid})
+    return RedirectResponse(f"/admin/dashboard?ok={_enc('Invoice scan queued (job ' + jid[:8] + '). New PDFs will be extracted and categorised; refresh in a moment.')}", status_code=303)
+
+
 @router.post("/admin/users/new")
 async def create_user(
     request: Request,

@@ -153,9 +153,9 @@ _ADMIN_LINK = (
     '&#x2699; Admin</a>'
 )
 
-# The template ships with placeholder branding; swap it for this container's
-# institution name (from EPIPROC_INSTITUTION via settings).
-_TEMPLATE_BRAND = "Hogwarts School of Witchcraft and Wizardry"
+# The template carries a neutral {{INSTITUTION}} placeholder, swapped at render
+# for this container's institution name (from EPIPROC_INSTITUTION via settings).
+# No demo/tenant strings are baked into the engine image.
 
 
 def _csrf_inject(token: str) -> str:
@@ -243,7 +243,7 @@ def _apply(template: str, subs: dict) -> str:
     for k, v in subs.items():
         template = template.replace(k, v)
     template = template.replace("</nav>", _LOGOUT_BTN, 1)
-    template = template.replace(_TEMPLATE_BRAND, settings.institution)
+    template = template.replace("{{INSTITUTION}}", settings.institution)
     template = template.replace("</body>", _tab_toggle_js() + "</body>", 1)
     # Currency symbol is per-customer (the template hardcodes £). Applied after
     # substitutions so injected values (e.g. the header grand total) convert too.

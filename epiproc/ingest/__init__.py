@@ -1,10 +1,15 @@
-"""Ingest engine: dedup -> extract -> rules -> verify -> categorise.
+"""Ingest engine: scan -> extract -> rules -> dedup -> store -> categorise.
 
-Stage status (skeleton):
-  dedup.py      COPIED from v1 (works; needs import rewiring to epiproc.*)
-  pdf_vlm.py    STUB  — the one true rewrite: guided-JSON extraction
-  rules.py      STUB  — declarative corrections engine (replaces correct_* branches)
-  verify.py     COPIED from v1 checks.py (C0-C5; needs import rewiring)
-  categorise.py STUB  — port from retired generate_dashboard_v5.py Phase 1
-  pipeline.py   the orchestrator that chains the stages for one PDF / one batch
+Stages:
+  pdf_vlm.py    guided-JSON per-page vision extraction
+  rules.py      declarative corrections engine (replaces v1's correct_* branches)
+  pipeline.py   orchestrator for ONE pdf: extract -> rules -> dedup -> verify -> store
+  scan.py       folder scanner: walk invoices/, run new PDFs through the pipeline,
+                then categorise new rows (the turn-key entry point)
+  categorise.py two-level (category + variety) line-item classification
+
+The original v1 dedup.py / verify.py (SQLite; import `pipeline.config`) live under
+../../legacy/ — unrunnable as-is, kept for reference until the checks are ported.
+Practical dedup now happens in pipeline.py (by invoice_number) and scan.py (by
+content hash + the ingested_files ledger).
 """

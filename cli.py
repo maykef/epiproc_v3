@@ -23,11 +23,17 @@ def cmd_new(args: argparse.Namespace) -> None:
         (root / sub).mkdir(parents=True, exist_ok=True)
     env = root / ".env"
     if not env.exists():
+        # ONE generated secret used in two places that must agree: the Postgres
+        # sidecar's POSTGRES_PASSWORD (initialises the role) and the app's DSN
+        # (connects with it). EPIPROC_PORT is the HOST publish port; the app
+        # always binds 5001 inside the container.
+        pg_password = secrets.token_hex(16)
         env.write_text(
             f"EPIPROC_INSTANCE_NAME={args.name}\n"
             f"EPIPROC_INSTITUTION={args.institution or args.name}\n"
             f"EPIPROC_PORT={args.port}\n"
-            f"EPIPROC_PG_DSN=host=db port=5432 dbname=epiproc user=epiproc password={secrets.token_hex(16)}\n"
+            f"POSTGRES_PASSWORD={pg_password}\n"
+            f"EPIPROC_PG_DSN=host=db port=5432 dbname=epiproc user=epiproc password={pg_password}\n"
             f"EPIPROC_SESSION_KEY={secrets.token_hex(32)}\n"
             f"EPIPROC_VLLM_URL=http://host.docker.internal:8000/v1\n"
         )

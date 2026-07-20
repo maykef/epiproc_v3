@@ -18,9 +18,20 @@ import psycopg
 from epiproc.settings import settings
 
 POLL_INTERVAL = 5
+AUTO_SCAN_INTERVAL = 60           # seconds between idle folder scans
 _gpu_sem = threading.Semaphore(settings.gpu_slots)
 _api_sem = threading.Semaphore(settings.api_slots)
 _stop = threading.Event()
+
+
+def _scan(tag: str) -> dict:
+    """Run the folder scan under the GPU slot. Shared by the auto-scan and the
+    `extract`/`onboard`/`process` job types."""
+    from epiproc.db.pool import init_pool
+    from epiproc.ingest.scan import scan_and_process
+    init_pool()
+    with _gpu_sem:
+        return scan_and_process(progress=lambda m: print(f"[worker]{tag} {m}", flush=True))
 
 
 def _requeue_stuck(conn) -> None:  # noqa: ANN001
@@ -55,7 +66,11 @@ def _run_job(job: dict) -> None:
             n = categorise_all(only_uncategorised=params.get("only_uncategorised", False))
         print(f"[worker] categorise job {job['id']}: {n} items")
         return
-    # onboard/extract/report land in later phases.
+    if jtype in ("extract", "onboard", "process"):
+        counts = _scan(f"[job {job['id']}]")
+        print(f"[worker] {jtype} job {job['id']}: {counts}")
+        return
+    # report lands in a later phase.
     raise NotImplementedError(f"_run_job({jtype}) — not yet implemented")
 
 
@@ -64,6 +79,7 @@ def poll() -> None:
     conn = psycopg.connect(settings.pg_dsn, row_factory=dict_row, autocommit=False)
     _requeue_stuck(conn)
     print("[worker] polling jobs every", POLL_INTERVAL, "s")
+    last_scan = 0.0                     # 0 => scan on the first idle cycle (boot)
     while not _stop.is_set():
         # claim one queued job atomically
         with conn.transaction():
@@ -77,6 +93,18 @@ def poll() -> None:
                     (os.getpid(), job["id"]),
                 )
         if not job:
+            # Idle: periodically scan the invoices folder so freshly-dropped PDFs
+            # are processed with no manual trigger. Idempotent (ingested_files),
+            # so an empty or unchanged folder is nearly free.
+            now = time.monotonic()
+            if now - last_scan >= AUTO_SCAN_INTERVAL:
+                last_scan = now
+                try:
+                    counts = _scan("[auto]")
+                    if counts.get("ingested") or counts.get("error"):
+                        print(f"[worker][auto] scan: {counts}", flush=True)
+                except Exception as e:  # noqa: BLE001
+                    print(f"[worker][auto] scan error: {e}", flush=True)
             time.sleep(POLL_INTERVAL)
             continue
         try:

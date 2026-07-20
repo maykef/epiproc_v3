@@ -23,9 +23,12 @@ services:
 
   db:
     image: postgres:16
+    env_file: .env
     environment:
       POSTGRES_USER: epiproc
-      POSTGRES_PASSWORD: epiproc
+      # Must match the password in EPIPROC_PG_DSN (both written by `cli.py new`).
+      # Falls back to `epiproc` only if .env doesn't set it.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-epiproc}
       POSTGRES_DB: epiproc
     volumes:
       - ./pgdata:/var/lib/postgresql/data
