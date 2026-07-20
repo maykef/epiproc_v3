@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Set your password — EpiProc</title>
+  <title>Set your password — EpiProc Atlas</title>
   <meta name="csrf-token" content="{{ request.state.csrf_token }}">
   <script>(function(){var t={{ request.state.csrf_token | tojson }};var _f=window.fetch;window.fetch=function(url,o){o=o||{};var m=(o.method||'GET').toUpperCase();if(m==='GET'||m==='HEAD'||m==='OPTIONS')return _f(url,o);o.headers=Object.assign({'X-CSRF-Token':t},o.headers||{});return _f(url,o);};function p(){document.querySelectorAll('form').forEach(function(f){if(f.dataset.csrfDone)return;f.dataset.csrfDone='1';f.addEventListener('submit',function(){if(!f.querySelector('[name="_csrf"]')){var i=document.createElement('input');i.type='hidden';i.name='_csrf';i.value=t;f.appendChild(i);}});});}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',p);else p();})();</script>
   <style>
@@ -47,7 +47,7 @@
 </head>
 <body>
   <div class="card">
-    <div class="logo">EpiProc</div>
+    <div class="logo">EpiProc Atlas</div>
 
     {% if invalid %}
       <div class="invalid" role="alert">

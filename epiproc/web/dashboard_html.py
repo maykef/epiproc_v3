@@ -326,7 +326,7 @@ def build_multi_dashboard_html(suppliers: list[str], is_admin: bool = False, csr
     )
 
     return _apply(template, {
-        "{{SUP_TITLE}}":    "EpiProc",
+        "{{SUP_TITLE}}":    "EpiProc Atlas",
         "{{HEADER_SUB}}":   f"{n_inv} invoices &nbsp;·&nbsp; {n_sup} suppliers &nbsp;·&nbsp; Grand total £{grand:,.0f}",
         "{{SUP_TAB}}":      sup_tab,
         "{{SUP_FILTER}}":   sup_filter,

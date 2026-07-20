@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{% block title %}Admin{% endblock %} — EpiProc</title>
+<title>{% block title %}Admin{% endblock %} — EpiProc Atlas</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -71,7 +71,7 @@ details[open] summary{margin-bottom:16px}
 </head>
 <body>
 <nav role="navigation" aria-label="Admin navigation">
-  <span class="brand">EpiProc</span>
+  <span class="brand">EpiProc Atlas</span>
   <a href="/dashboard">Dashboard</a>
   <a href="/admin" {% if request.url.path == '/admin' %}style="color:var(--text);font-weight:600"{% endif %}>Overview</a>
   <a href="/admin/users" {% if request.url.path.startswith('/admin/users') %}style="color:var(--text);font-weight:600"{% endif %}>Users</a>
