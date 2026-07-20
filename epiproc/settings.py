@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     cookie_secure: bool = True          # MUST stay true in production (HTTPS)
     session_key: str = ""               # set per container; empty => generated on boot
 
+    # Optional bearer token gating GET /metrics for Prometheus scraping. When set,
+    # a scraper authenticates with `Authorization: Bearer <token>` (or X-Metrics-Token).
+    # When unset, /metrics requires an admin session — it is never open by default,
+    # because the gauges carry supplier names and per-supplier invoice counts.
+    metrics_token: str = ""
+
     # Processing concurrency (mirrors v1's proven ceiling: 1 GPU job, 2 API jobs)
     gpu_slots: int = 1
     api_slots: int = 2

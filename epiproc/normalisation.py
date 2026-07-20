@@ -15,7 +15,13 @@ from typing import Optional
 
 import yaml
 
-_DEFAULT_CONFIGS_DIR = Path(__file__).resolve().parents[2] / "configs"
+# normalisation.py lives at epiproc/normalisation.py, so parents[1] is the repo
+# root and parents[1]/configs is the baked config dir (matches suppliers._REPO_CONFIGS).
+# parents[2] was one level too high — it resolved to /configs inside the image
+# (WORKDIR /app), which does not exist, so the default silently loaded zero
+# department entries. Callers wanting the customer's mounted configs still pass
+# configs_dir= explicitly (the dashboard does).
+_DEFAULT_CONFIGS_DIR = Path(__file__).resolve().parents[1] / "configs"
 _DEPT_ENTRIES_CACHE: dict[Path, list] = {}
 
 

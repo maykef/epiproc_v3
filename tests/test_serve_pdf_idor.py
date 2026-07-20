@@ -102,11 +102,28 @@ def test_served_via_stored_path_without_walk(monkeypatch, tmp_path):
 
 
 def test_legacy_row_without_path_falls_back(monkeypatch, tmp_path):
-    # A row with no stored path (pre-backfill) still resolves via the fallback.
+    # A row with no stored path (pre-backfill) still resolves via the fallback,
+    # which is scoped to the supplier's OWN folder.
     inv_dir = tmp_path / "invoices"
-    (inv_dir / "inbox").mkdir(parents=True)
-    (inv_dir / "inbox" / "mine.pdf").write_bytes(b"%PDF-1.4 ok")
+    (inv_dir / "supplier_a").mkdir(parents=True)
+    (inv_dir / "supplier_a" / "mine.pdf").write_bytes(b"%PDF-1.4 ok")
     monkeypatch.setattr(dashboard, "_INVOICES_DIR", inv_dir)
     _patch_pool(monkeypatch, owned={("supplier_a", "mine.pdf"): None})
     resp = dashboard.serve_pdf("supplier_a", "mine.pdf", {"suppliers": ["supplier_a"], "role": "viewer"})
     assert resp.status_code == 200
+
+
+def test_legacy_fallback_does_not_cross_suppliers(monkeypatch, tmp_path):
+    # Confidentiality: a legacy row (no stored path) for supplier_a must NOT be
+    # served another supplier's identically-named file via the basename fallback.
+    # supplier_a genuinely owns "shared.pdf" (row exists, authz passes) but only
+    # supplier_b's file with that name is on disk — the scoped fallback must 404,
+    # never serve supplier_b's bytes.
+    inv_dir = tmp_path / "invoices"
+    (inv_dir / "supplier_b").mkdir(parents=True)
+    (inv_dir / "supplier_b" / "shared.pdf").write_bytes(b"%PDF-1.4 secret-B")
+    monkeypatch.setattr(dashboard, "_INVOICES_DIR", inv_dir)
+    _patch_pool(monkeypatch, owned={("supplier_a", "shared.pdf"): None})
+    with pytest.raises(HTTPException) as exc:
+        dashboard.serve_pdf("supplier_a", "shared.pdf", {"suppliers": ["supplier_a"], "role": "viewer"})
+    assert exc.value.status_code == 404

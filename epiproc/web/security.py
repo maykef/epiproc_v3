@@ -37,7 +37,12 @@ _CSRF_SAFE = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 # with CSRF enforced the exit beacon was always 403'd and that data was lost.
 # Forging analytics events is nuisance-only, so exempting it is an acceptable
 # trade for not silently dropping page-exit telemetry.
-_CSRF_EXEMPT = frozenset({"/login", "/health", "/usage/events"})
+#
+# POST /login is NOT exempt: login CSRF (an attacker silently logging a victim into
+# the attacker's account) is a real attack. The double-submit cookie is issued
+# pre-session on the GET /login response and login.html embeds the token, so the
+# form posts a matching _csrf field. /login/mfa is likewise enforced.
+_CSRF_EXEMPT = frozenset({"/health", "/usage/events"})
 
 
 def _make_csrf_token(request: Request) -> str:

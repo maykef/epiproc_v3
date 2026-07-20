@@ -8,9 +8,10 @@ data routers and reports/services/search (out of scope for this port).
 """
 from __future__ import annotations
 
+import secrets
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -27,6 +28,7 @@ from epiproc.web.security import (
     SecurityHeadersMiddleware,
     limiter,
 )
+from epiproc.web.session import get_session_user
 
 
 @asynccontextmanager
@@ -78,5 +80,18 @@ def health():
 
 
 @app.get("/metrics", include_in_schema=False)
-def metrics():
+def metrics(request: Request):
+    # Never open by default — the gauges expose supplier names and per-supplier
+    # invoice counts. With EPIPROC_METRICS_TOKEN set, Prometheus authenticates with a
+    # bearer token; otherwise access requires an admin session.
+    token = settings.metrics_token
+    if token:
+        auth = request.headers.get("authorization", "")
+        supplied = auth[7:] if auth[:7].lower() == "bearer " else request.headers.get("x-metrics-token", "")
+        if not (supplied and secrets.compare_digest(supplied, token)):
+            return Response("unauthorized", status_code=401)
+    else:
+        user = get_session_user(request)  # 307 -> /login when unauthenticated
+        if user.get("role") != "admin":
+            return Response("admin only", status_code=403)
     return metrics_response()

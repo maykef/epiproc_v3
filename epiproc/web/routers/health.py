@@ -11,18 +11,31 @@ from __future__ import annotations
 import shutil
 import urllib.request
 from typing import Any
+from urllib.parse import urlsplit
 
 import psycopg
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from epiproc.db.pool import pool
 from epiproc.settings import settings
 from epiproc.web.metrics import set_active_sessions, set_invoices_total, set_vllm_healthy
+from epiproc.web.session import get_session_user
 
 router = APIRouter(tags=["health"])
 
-_VLLM_METRICS_URL = "http://127.0.0.1:8000/metrics"
+
+def _vllm_metrics_url() -> str:
+    """vLLM's Prometheus endpoint, derived from the configured base URL.
+
+    Hardcoding 127.0.0.1 was wrong: inside the container the shared GPU server is
+    reached at settings.vllm_url's host (host.docker.internal), not loopback, so the
+    probe was always false. vLLM serves /metrics at the root, not under /v1.
+    """
+    parts = urlsplit(settings.vllm_url)
+    return f"{parts.scheme}://{parts.netloc}/metrics"
+
+
 _DISK_WARN_PCT = 85.0
 
 
@@ -37,7 +50,7 @@ def _check_postgres() -> dict[str, Any]:
 
 def _check_vllm() -> dict[str, Any]:
     try:
-        with urllib.request.urlopen(_VLLM_METRICS_URL, timeout=2) as resp:
+        with urllib.request.urlopen(_vllm_metrics_url(), timeout=2) as resp:
             healthy = resp.status == 200
     except Exception:
         healthy = False
@@ -76,8 +89,17 @@ def health_ready():
 
 
 @router.get("/health/detailed")
-def health_detailed():
-    """Detailed operational snapshot — for the operator dashboard."""
+def health_detailed(request: Request):
+    """Detailed operational snapshot — for the operator dashboard.
+
+    Admin-only: this exposes supplier names, per-supplier invoice counts, job-queue
+    depth and active-session counts — business metadata that must not be readable
+    without authentication on a product that sells data confidentiality. The plain
+    /health and /health/ready probes stay open for the reverse proxy / Prometheus.
+    """
+    user = get_session_user(request)  # raises 307 -> /login when unauthenticated
+    if user.get("role") != "admin":
+        return JSONResponse(status_code=403, content={"error": "admin only"})
     try:
         with pool().connection() as conn:
             # Per-supplier invoice counts (default schema)

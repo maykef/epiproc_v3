@@ -109,10 +109,15 @@ def serve_pdf(
             pass
 
     # Fallback for legacy rows without a stored path (backfill_paths fills these on
-    # boot) or a moved file: try the per-supplier path, then a basename match.
-    pdf_path = _INVOICES_DIR / supplier / filename
-    if not pdf_path.exists() and _INVOICES_DIR.exists():
-        match = next((p for p in _INVOICES_DIR.rglob("*.pdf") if p.name == filename), None)
+    # boot) or a moved file. Scope the basename search to THIS supplier's own folder:
+    # a global rglob could serve a *different* supplier's identically-named PDF even
+    # though the authz row check passed — leaking one customer-supplier's document to
+    # a user entitled only to another. Post-backfill the stored-path fast path above
+    # wins; this only runs for un-backfilled or moved files.
+    supplier_dir = _INVOICES_DIR / supplier
+    pdf_path = supplier_dir / filename
+    if not pdf_path.exists() and supplier_dir.is_dir():
+        match = next((p for p in supplier_dir.rglob("*.pdf") if p.name == filename), None)
         if match is not None:
             pdf_path = match
     if not pdf_path.exists():

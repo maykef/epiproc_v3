@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 
 import yaml
 
+from epiproc.settings import settings
+
 # repo-local configs by default; a container overrides via settings.data_dir/configs
 _REPO_CONFIGS = pathlib.Path(__file__).resolve().parent.parent / "configs"
 
@@ -29,6 +31,16 @@ class SupplierConfig:
 
 
 def configs_dir() -> pathlib.Path:
+    """The active config directory.
+
+    Prefer the container's mounted ``<data_dir>/configs`` when it exists, else the
+    repo-baked defaults. A customer drops per-supplier YAMLs (and ``departments.yml``)
+    into their mounted configs folder to customise extraction/normalisation without a
+    rebuild — so BOTH ingest and the dashboard must read from here, not the baked copy.
+    """
+    mounted = pathlib.Path(settings.data_dir) / "configs"
+    if mounted.is_dir():
+        return mounted
     return _REPO_CONFIGS
 
 
@@ -41,7 +53,7 @@ def _base_config(configs: pathlib.Path) -> dict:
 
 
 def load_config(supplier: str, configs: pathlib.Path | None = None) -> SupplierConfig:
-    d = configs or _REPO_CONFIGS
+    d = configs or configs_dir()
     base = _base_config(d)
     path = d / f"{supplier}.yml"
     if not path.exists():
@@ -77,6 +89,6 @@ def load_config(supplier: str, configs: pathlib.Path | None = None) -> SupplierC
 
 
 def list_suppliers(configs: pathlib.Path | None = None) -> list[str]:
-    d = configs or _REPO_CONFIGS
+    d = configs or configs_dir()
     skip = {"_base", "base_extraction_v1", "categorisation", "departments", "tier_overrides"}
     return sorted(p.stem for p in d.glob("*.yml") if p.stem not in skip)

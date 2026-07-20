@@ -14,23 +14,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date as _date
-from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 from epiproc.db.pool import pool
 from epiproc.normalisation import norm_dept
-from epiproc.settings import settings
-from epiproc.suppliers import configs_dir as _repo_configs_dir
-from epiproc.suppliers import list_suppliers, load_config
-
-
-def _configs_dir() -> Path:
-    """Prefer the container's mounted configs, fall back to the repo copy."""
-    mounted = Path(settings.data_dir) / "configs"
-    if mounted.exists():
-        return mounted
-    return _repo_configs_dir()
+from epiproc.suppliers import configs_dir, list_suppliers, load_config
 
 
 def get_data_quality() -> dict:
@@ -67,7 +56,7 @@ def get_data_quality() -> dict:
             "fail_files": fail_files}
 
 
-CONFIGS_DIR = _configs_dir()
+CONFIGS_DIR = configs_dir()
 
 _FALLBACK_COLOR = "#6c7cff"
 
