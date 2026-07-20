@@ -6,6 +6,10 @@ set -euo pipefail
 echo "[start] running migrations..."
 python -c "from epiproc.db.pool import run_migrations; print('[start] migrations applied:', run_migrations())"
 
+# Backfill invoices.path for rows ingested before the column existed (one-off;
+# a no-op once filled) so the PDF route opens files directly instead of walking.
+python -c "from epiproc.db.pool import init_pool; init_pool(); from epiproc.db.invoices import backfill_paths; print('[start] backfilled invoice paths:', backfill_paths())"
+
 # Always bind the fixed container port 5001. EPIPROC_PORT is the *host* publish
 # port (compose maps ${EPIPROC_PORT}:5001) and must NOT be used to bind uvicorn,
 # or the published port and the HEALTHCHECK (both 5001) would point at nothing.

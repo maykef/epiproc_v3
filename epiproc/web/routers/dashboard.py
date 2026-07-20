@@ -82,26 +82,36 @@ def serve_pdf(
         raise HTTPException(status_code=400, detail="Invalid filename.")
     if "/" in supplier or "\\" in supplier or ".." in supplier:
         raise HTTPException(status_code=400, detail="Invalid supplier.")
-    # Authorisation anchor: the (supplier, filename) pair must be a real invoice
-    # owned by THIS supplier. The `allowed` check above only guards the URL's
-    # supplier segment; without this the basename fallback below would serve ANY
-    # supplier's PDF to anyone who can name the file (IDOR) — v3 stores files
-    # under invoices/inbox/, so the per-supplier path never exists and the
-    # fallback would otherwise match by basename across every supplier's files.
+    # Authorisation anchor + direct path: look up the invoice owned by THIS
+    # supplier and read its stored file path in one query. The `allowed` check
+    # above only guards the URL's supplier segment; requiring a matching invoice
+    # row is what stops the basename fallback below serving ANY supplier's PDF to
+    # anyone who can name it (IDOR).
     from epiproc.db.pool import pool
     with pool().connection() as conn:
-        owned = conn.execute(
-            "SELECT 1 FROM invoices WHERE supplier = %s AND filename = %s LIMIT 1",
+        row = conn.execute(
+            "SELECT path FROM invoices WHERE supplier = %s AND filename = %s LIMIT 1",
             (supplier, filename),
         ).fetchone()
-    if not owned:
+    if row is None:
         raise HTTPException(status_code=404, detail="File not found.")
+
+    # Fast path: the row stores the file's location, so open it directly — no walk.
+    # Verify it still resolves under invoices/ (defence against a bad path value).
+    stored = row.get("path")
+    if stored:
+        p = Path(stored)
+        try:
+            resolved = p.resolve()
+            if p.is_file() and _INVOICES_DIR.resolve() in resolved.parents:
+                return FileResponse(str(p), media_type="application/pdf")
+        except OSError:
+            pass
+
+    # Fallback for legacy rows without a stored path (backfill_paths fills these on
+    # boot) or a moved file: try the per-supplier path, then a basename match.
     pdf_path = _INVOICES_DIR / supplier / filename
     if not pdf_path.exists() and _INVOICES_DIR.exists():
-        # v3 drops files under invoices/ (typically invoices/inbox/) without
-        # per-supplier folders, so fall back to a basename match anywhere below
-        # invoices/. Safe now that the (supplier, filename) pairing is authorised
-        # against the DB above; filename is guarded against '/', '\\' and '..'.
         match = next((p for p in _INVOICES_DIR.rglob("*.pdf") if p.name == filename), None)
         if match is not None:
             pdf_path = match

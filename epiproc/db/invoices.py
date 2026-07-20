@@ -29,7 +29,8 @@ def _date(v):
 
 def insert_record(conn, supplier: str, filename: str, record: dict,
                   corrections: list[str], error: str | None = None,
-                  status: str = "extracted", processing_time_s: float | None = None) -> int:
+                  status: str = "extracted", processing_time_s: float | None = None,
+                  path: str | None = None) -> int:
     rec = record or {}
     tot = rec.get("totals") or {}
     seller = rec.get("seller") or {}
@@ -49,9 +50,9 @@ def insert_record(conn, supplier: str, filename: str, record: dict,
             subtotal, discount_rate_percent, discount_amount, discount_2,
             freight, handling_charges, vat_amount, total_amount,
             notes, corrections_applied, validation_warning,
-            raw_json, extraction_error, processing_time_s, status)
+            raw_json, extraction_error, processing_time_s, status, path)
            VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,
-                   %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s)
+                   %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s, %s)
            RETURNING id""",
         (supplier, filename, rec.get("document_type"), rec.get("invoice_number"),
          _date(rec.get("invoice_date")), rec.get("currency"),
@@ -66,7 +67,7 @@ def insert_record(conn, supplier: str, filename: str, record: dict,
          _num(tot.get("vat_amount")), _num(tot.get("total")),
          rec.get("notes"), "; ".join(corrections) if corrections else None,
          rec.get("validation_warning"),
-         json.dumps(rec, ensure_ascii=False), error, processing_time_s, status),
+         json.dumps(rec, ensure_ascii=False), error, processing_time_s, status, path),
     ).fetchone()
     inv_id = row["id"]
 
@@ -84,3 +85,36 @@ def insert_record(conn, supplier: str, filename: str, record: dict,
         )
     conn.commit()
     return inv_id
+
+
+def backfill_paths() -> int:
+    """Populate invoices.path for rows that predate the column, by locating each
+    PDF once under invoices/. Idempotent: only touches NULL-path rows, so it's a
+    near-free no-op on every boot after the first. Returns the number filled."""
+    import pathlib
+
+    from epiproc.db.pool import pool
+    from epiproc.settings import settings
+
+    root = pathlib.Path(settings.data_dir) / "invoices"
+    if not root.exists():
+        return 0
+    with pool().connection() as conn:
+        rows = conn.execute(
+            "SELECT id, filename FROM invoices WHERE path IS NULL AND filename IS NOT NULL"
+        ).fetchall()
+        if not rows:
+            return 0
+        # One walk, basename -> path (first match wins; real data keeps files in
+        # invoices/inbox/ with unique names, and serve_pdf still ownership-checks).
+        by_name: dict[str, str] = {}
+        for p in root.rglob("*.pdf"):
+            by_name.setdefault(p.name, str(p))
+        filled = 0
+        for r in rows:
+            fp = by_name.get(r["filename"])
+            if fp:
+                conn.execute("UPDATE invoices SET path=%s WHERE id=%s", (fp, r["id"]))
+                filled += 1
+        conn.commit()
+    return filled

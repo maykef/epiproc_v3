@@ -85,6 +85,7 @@ def process_pdf(pdf_path: pathlib.Path, cfg, client, conn,  # noqa: ANN001
                     "of": dup["filename"]}
 
     status = _verify(record)
-    inv_id = insert_record(conn, supplier, pdf_path.name, record, notes, status=status)
+    inv_id = insert_record(conn, supplier, pdf_path.name, record, notes, status=status,
+                           path=str(pdf_path))
     return {"filename": pdf_path.name, "status": "ingested", "invoice_id": inv_id,
             "supplier": supplier, "invoice_number": invoice_number, "corrections": notes}
