@@ -247,8 +247,11 @@ def _data_quality_banner() -> str:
         dq = get_data_quality()
     except Exception:  # noqa: BLE001 — never let the banner break the dashboard
         return ""
-    fails, warns = dq["ingest_failures"], dq["reconciliation_warnings"]
-    if not fails and not warns:
+    fails = dq["ingest_failures"]
+    warns = dq["reconciliation_warnings"]
+    uncat = dq.get("uncategorised_items", 0)
+    other = dq.get("other_share", 0.0)
+    if not (fails or warns or uncat or other > 0.15):
         return ""
     parts = []
     if fails:
@@ -259,6 +262,13 @@ def _data_quality_banner() -> str:
     if warns:
         parts.append(f'<strong>{warns} invoice(s) don\'t reconcile</strong>'
                      '<span style="opacity:.8"> — line items ≠ invoice total</span>')
+    if uncat:
+        parts.append(f'<strong>{uncat} line item(s) uncategorised</strong>'
+                     '<span style="opacity:.8"> — classification failed; will retry</span>')
+    if other > 0.15:
+        parts.append(f'<strong>{other * 100:.0f}% of spend is "Other"</strong>'
+                     '<span style="opacity:.8"> — re-derive categories from data '
+                     '(Admin → Dashboard)</span>')
     inner = " &nbsp;·&nbsp; ".join(parts)
     return (
         '<div style="margin:0 0 14px;padding:10px 14px;border-radius:8px;font-size:12.5px;'
@@ -349,7 +359,7 @@ def build_multi_dashboard_html(suppliers: list[str], is_admin: bool = False, csr
     sup_tab = '<div class="tab" onclick="showPage(\'suppliers\',this)">By Supplier</div>'
     suppie_card = (
         '<div class="card span2" id="suppie-card-wrap">'
-        '<h2>Spend by Supplier (invoice level)</h2>'
+        '<h2>Spend by Supplier (£ — item level)</h2>'
         '<div id="c-suppie-wrap"></div>'
         '</div>'
     )

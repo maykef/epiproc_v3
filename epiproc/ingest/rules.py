@@ -91,15 +91,31 @@ def _reconcile_totals(rec: dict) -> tuple[dict, str | None]:
     warns: list[str] = []
 
     def _off(a: float, b: float) -> bool:
-        return abs(a - b) > max(0.5, 0.01 * abs(b))      # 1% or 50c tolerance
+        # Exact accounting figures — a cents-level band (rounded to avoid float noise),
+        # not a percentage. A 2-cent tolerance absorbs legitimate rounding only.
+        return round(abs(a - b), 2) > 0.02
 
+    def _n(k: str) -> float:
+        v = tot.get(k)
+        return v if isinstance(v, (int, float)) else 0.0
+
+    # 1. Line items should reconcile to the subtotal (net of charges).
     if items and isinstance(subtotal, (int, float)) and _off(line_sum, subtotal):
         warns.append(f"line items sum {line_sum:.2f} ≠ subtotal {subtotal:.2f} "
                      f"(Δ{line_sum - subtotal:+.2f})")
-    if items and isinstance(total, (int, float)) and not isinstance(subtotal, (int, float)) \
+    elif items and isinstance(total, (int, float)) and not isinstance(subtotal, (int, float)) \
             and _off(line_sum, total):
         warns.append(f"line items sum {line_sum:.2f} ≠ total {total:.2f} "
                      f"(Δ{line_sum - total:+.2f})")
+    # 2. subtotal + charges − discounts should reconcile to the total. This is the gap
+    #    where UNITEMISED charges (deposits, pallets) hide — invisible to any line-item
+    #    check. Skipped for credit notes, whose signs are already flipped upstream.
+    if not _is_credit(rec) and isinstance(subtotal, (int, float)) and isinstance(total, (int, float)):
+        explained = (subtotal + _n("freight") + _n("handling_charges") + _n("vat_amount")
+                     - _n("discount_amount") - _n("discount_2"))
+        if _off(explained, total):
+            warns.append(f"subtotal+charges−discounts {explained:.2f} ≠ total {total:.2f} "
+                         f"(Δ{total - explained:+.2f}) — unitemised charge?")
     if not warns:
         return rec, None
     prior = rec.get("validation_warning")

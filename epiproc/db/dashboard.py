@@ -34,9 +34,11 @@ def _configs_dir() -> Path:
 
 def get_data_quality() -> dict:
     """Instance-wide ingest health for the Overview banner: PDFs that failed to
-    process (would otherwise be silently absent) and invoices whose line items
-    don't reconcile to their totals."""
+    process, invoices whose line items don't reconcile, line items that failed
+    classification, and the 'Other' share (a signal the discovered taxonomy has
+    gone stale and should be re-derived)."""
     from epiproc.db import ingested
+    from epiproc.db.settings import OTHER_CATEGORY
     with pool().connection() as conn:
         try:
             fails = ingested.failure_count(conn)
@@ -49,7 +51,18 @@ def get_data_quality() -> dict:
             "SELECT count(*) AS c FROM invoices "
             "WHERE validation_warning IS NOT NULL AND validation_warning <> ''"
         ).fetchone()["c"]
+        uncategorised = conn.execute(
+            "SELECT count(*) AS c FROM invoice_items WHERE category IS NULL"
+        ).fetchone()["c"]
+        row = conn.execute(
+            "SELECT coalesce(sum(total_price), 0) AS tot, "
+            "coalesce(sum(total_price) FILTER (WHERE category = %s), 0) AS other "
+            "FROM invoice_items WHERE total_price IS NOT NULL AND category IS NOT NULL",
+            (OTHER_CATEGORY,),
+        ).fetchone()
+        other_share = (row["other"] / row["tot"]) if row["tot"] else 0.0
     return {"ingest_failures": fails, "reconciliation_warnings": warns,
+            "uncategorised_items": uncategorised, "other_share": other_share,
             "fail_files": fail_files}
 
 

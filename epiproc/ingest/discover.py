@@ -42,11 +42,15 @@ def _sample_descriptions(conn) -> list[str]:  # noqa: ANN001
                  conn.execute("SELECT DISTINCT supplier FROM invoices").fetchall()]
     out: list[str] = []
     for sup in suppliers:
+        # Order by frequency so the taxonomy is derived from what actually dominates
+        # the data, not from whatever rows Postgres happened to return first.
         rows = conn.execute(
-            """SELECT DISTINCT ii.article, ii.description
+            """SELECT ii.article, ii.description, count(*) AS n
                FROM invoice_items ii JOIN invoices i ON ii.invoice_id = i.id
                WHERE i.supplier = %s
                  AND coalesce(ii.description, ii.article, '') <> ''
+               GROUP BY ii.article, ii.description
+               ORDER BY n DESC
                LIMIT %s""",
             (sup, _PER_SUPPLIER),
         ).fetchall()
@@ -85,8 +89,11 @@ def discover_categories(client: OpenAI, model: str, conn, hint: str = "") -> lis
         "any industry or domain.\n"
         "- Prefer specific classes over umbrella terms; avoid near-duplicates "
         "(never both a singular and plural of the same word).\n"
-        "- Use one category named 'Other' for charges/miscellany (freight, deposits, "
-        "packaging, handling, fees) that are not a product class.\n"
+        "- Charges are real spend, not miscellany: give freight, deposits, packaging, "
+        "pallets, handling and fees their OWN specific categories (e.g. Freight, Deposit, "
+        "Packaging, Pallet) when they occur.\n"
+        "- Include a single 'Other' category ONLY as a fallback for items that genuinely "
+        "fit nothing above — never use it as a charges bucket.\n"
         + (f"- Customer guidance to honour if compatible: {hint}\n" if hint.strip() else "")
         + f"\nLine items:\n{listing}"
     )

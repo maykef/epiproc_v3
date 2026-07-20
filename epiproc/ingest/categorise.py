@@ -94,12 +94,20 @@ def _classify_batch(client: OpenAI, model: str, descriptions: list[str],
 
 
 def _categorise_descriptions(client: OpenAI, model: str, descriptions: list[str],
-                             categories: list[str], scheme: str = "") -> list[tuple[str, str]]:
-    """Classify all descriptions in bounded, index-validated batches."""
-    out: list[tuple[str, str]] = []
+                             categories: list[str], scheme: str = "",
+                             progress=None) -> list[tuple[str, str] | None]:  # noqa: ANN001
+    """Classify in bounded, index-validated batches. A batch that fails yields None
+    for its items (left uncategorised) instead of discarding the whole invoice, so a
+    single bad batch never loses the batches that succeeded."""
+    out: list[tuple[str, str] | None] = []
     for start in range(0, len(descriptions), _BATCH):
         batch = descriptions[start:start + _BATCH]
-        out.extend(_classify_batch(client, model, batch, categories, scheme))
+        try:
+            out.extend(_classify_batch(client, model, batch, categories, scheme))
+        except Exception as e:  # noqa: BLE001
+            if progress:
+                progress(f"categorise batch @{start} failed ({e}); leaving {len(batch)} uncategorised")
+            out.extend([None] * len(batch))
     return out
 
 
@@ -128,17 +136,18 @@ def categorise_all(only_uncategorised: bool = True, progress=None) -> int:
             # is in `article` while `description` holds a code, and vice-versa.
             descs = [" — ".join(p for p in (it["article"], it["description"]) if p) or "(no description)"
                      for it in items]
-            try:
-                cats = _categorise_descriptions(client, settings.vllm_model, descs, categories, scheme)
-            except Exception as e:  # noqa: BLE001
-                if progress:
-                    progress(f"invoice {inv_id}: error {e}")
-                continue
-            for it, (cat, var) in zip(items, cats):
+            cats = _categorise_descriptions(client, settings.vllm_model, descs,
+                                            categories, scheme, progress=progress)
+            written = 0
+            for it, res in zip(items, cats):
+                if res is None:            # failed batch — leave NULL, retried next run
+                    continue
+                cat, var = res
                 conn.execute("UPDATE invoice_items SET category=%s, variety=%s WHERE id=%s",
                              (cat, var, it["id"]))
+                written += 1
             conn.commit()
-            done += len(items)
+            done += written
             if progress:
-                progress(f"invoice {n}/{len(inv_ids)}: {len(items)} items categorised")
+                progress(f"invoice {n}/{len(inv_ids)}: {written}/{len(items)} items categorised")
     return done
