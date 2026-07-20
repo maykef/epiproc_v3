@@ -217,6 +217,50 @@ folder (especially `pgdata/` and `invoices/`) and the customer is backed up.
 
 ---
 
+## Backup & restore
+
+Three independent things to protect — they are backed up in different places:
+
+| What | Where it's backed up |
+|------|----------------------|
+| **Engine code** | GitHub (`origin/master`) — full history is the backup; `docker build` recreates a working image anytime |
+| **Engine image** (exact, tested) | Local tarball under `/mnt/nvme8tb/backups/` (kept off any registry) |
+| **Customer data** (irreplaceable) | The customer's own `/mnt/nvme8tb/customers/<name>/` folder — back it up locally/offsite; never to GitHub |
+
+### Restore the engine image (offline, no rebuild)
+
+The exact tested image is saved as a gzipped `docker save` tarball, named by version +
+the git commit it was built from:
+
+```
+/mnt/nvme8tb/backups/epiproc-<version>-<commit>.tar.gz      # e.g. epiproc-3.0.0-9c5eabc.tar.gz
+/mnt/nvme8tb/backups/epiproc-<version>-<commit>.README.txt  # provenance + these steps
+```
+
+To restore it:
+
+```bash
+docker load < /mnt/nvme8tb/backups/epiproc-3.0.0-9c5eabc.tar.gz
+docker tag epiproc:3.0.0-9c5eabc epiproc:3    # restore the plain :3 tag the compose files use
+```
+
+Then bring any customer back up with `docker compose up -d` as usual.
+
+> Rebuilding from source instead (`docker build -t epiproc:3 -f docker/Dockerfile .`) is
+> functional but **not byte-identical** — `pyproject.toml` uses version ranges and the base
+> image floats — so the saved tarball is the way to restore the exact image.
+
+### Create a new image backup (after a rebuild worth keeping)
+
+```bash
+cd /mnt/nvme8tb/epiproc_v3
+COMMIT=$(git rev-parse --short HEAD)
+docker tag epiproc:3 "epiproc:3.0.0-${COMMIT}"
+docker save "epiproc:3.0.0-${COMMIT}" | gzip > "/mnt/nvme8tb/backups/epiproc-3.0.0-${COMMIT}.tar.gz"
+```
+
+---
+
 ## Status (2026-07-20)
 
 Operational end-to-end and running on a first production customer instance
