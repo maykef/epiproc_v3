@@ -73,6 +73,36 @@ def set_categorisation_scheme(text: str) -> None:
     set_setting("categorisation_scheme", (text or "").strip() or DEFAULT_CATEGORISATION)
 
 
+# ── Category vocabulary (per customer, model-derived) ────────────────────────
+# The list of allowed top-level categories. It is DISCOVERED from the customer's
+# own invoice data by the local model on the first run (ingest/discover.py), not
+# hand-written and not hardcoded in the engine. Once set, it is used as a strict
+# JSON-schema enum during classification, so the same product always lands under
+# the same category name (no "Rose"/"Roses" drift). Editable per customer.
+OTHER_CATEGORY = "Other"
+
+
+def get_categories() -> list[str]:
+    v = get_setting("categories")
+    return list(v) if isinstance(v, list) else []
+
+
+def set_categories(cats: list[str]) -> None:
+    seen, clean = set(), []
+    for c in cats or []:
+        c = (str(c) or "").strip()
+        if c and c.lower() not in seen:
+            seen.add(c.lower())
+            clean.append(c)
+    if clean and not any(c.lower() == OTHER_CATEGORY.lower() for c in clean):
+        clean.append(OTHER_CATEGORY)       # always keep an escape hatch
+    set_setting("categories", clean)
+
+
+def has_categories() -> bool:
+    return len(get_categories()) > 0
+
+
 # ── Currency symbol (per customer) ───────────────────────────────────────────
 _CUR_SYMBOLS = {"EUR": "€", "GBP": "£", "USD": "$", "JPY": "¥", "CHF": "CHF ", "SEK": "kr "}
 

@@ -44,23 +44,46 @@
 </div>
 
 <div class="card">
-  <h2>Categorisation</h2>
+  <h2>Categories</h2>
   <p style="color:var(--muted);font-size:12px;margin-top:-4px">
-    Instruction to the local model for classifying line items — customer-specific
-    (a flower buyer categorises by flower type). Save, then re-run to apply.
+    The local model discovers these categories from your own invoice data on the
+    first run — no domain assumptions. Edit the list if you want, one per line;
+    it's used as a strict vocabulary so the same product always gets the same
+    category. Re-derive after adding new suppliers.
   </p>
-  <form method="post" action="/admin/dashboard/categorisation">
-    <textarea name="scheme" rows="6" style="width:100%;box-sizing:border-box;font-size:12px;
-      line-height:1.5;padding:8px 10px;background:var(--surf2);border:1px solid var(--border);
-      color:var(--text);border-radius:6px;resize:vertical">{{ scheme }}</textarea>
-    <div style="margin-top:10px;display:flex;gap:10px;align-items:center">
-      <button type="submit" class="btn">Save scheme</button>
+  <form method="post" action="/admin/dashboard/categories">
+    <textarea name="categories" rows="8" placeholder="(discovered from your data on first run)"
+      style="width:100%;box-sizing:border-box;font-size:12px;line-height:1.6;padding:8px 10px;
+      background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;
+      resize:vertical">{{ categories | join('\n') }}</textarea>
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button type="submit" class="btn">Save categories</button>
+      <span style="color:var(--muted);font-size:11px">{{ categories | length }} categor{{ 'y' if categories|length == 1 else 'ies' }}</span>
     </div>
   </form>
-  <form method="post" action="/admin/dashboard/recategorise" style="margin-top:10px"
-        onsubmit="return confirm('Re-run categorisation on all invoices with the current scheme?')">
-    <button type="submit" class="btn" style="background:var(--surf2)">↻ Re-run categorisation now</button>
-    <span style="color:var(--muted);font-size:11px;margin-left:8px">Runs in the background on the local model.</span>
+  <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+    <form method="post" action="/admin/dashboard/rediscover"
+          onsubmit="return confirm('Re-derive categories from your data with the local model, then re-categorise everything?')">
+      <button type="submit" class="btn">✦ Re-derive from data</button>
+    </form>
+    <form method="post" action="/admin/dashboard/recategorise"
+          onsubmit="return confirm('Re-run categorisation on all invoices with the current categories?')">
+      <button type="submit" class="btn" style="background:var(--surf2)">↻ Re-run categorisation</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Categorisation guidance <span style="font-weight:400;color:var(--muted);font-size:12px">(optional)</span></h2>
+  <p style="color:var(--muted);font-size:12px;margin-top:-4px">
+    Optional free-text hint passed to the model during discovery and classification
+    (e.g. "treat returnable trays as Deposit"). Leave as-is to stay fully data-driven.
+  </p>
+  <form method="post" action="/admin/dashboard/categorisation">
+    <textarea name="scheme" rows="4" style="width:100%;box-sizing:border-box;font-size:12px;
+      line-height:1.5;padding:8px 10px;background:var(--surf2);border:1px solid var(--border);
+      color:var(--text);border-radius:6px;resize:vertical">{{ scheme }}</textarea>
+    <div style="margin-top:10px"><button type="submit" class="btn">Save guidance</button></div>
   </form>
 </div>
 

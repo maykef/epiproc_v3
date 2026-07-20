@@ -60,9 +60,12 @@ def _run_job(job: dict) -> None:
     if jtype == "categorise":
         from epiproc.db.pool import init_pool
         from epiproc.ingest.categorise import categorise_all
+        from epiproc.ingest.discover import ensure_categories
         init_pool()
         params = job.get("params") or {}
         with _gpu_sem:
+            if params.get("rediscover"):
+                ensure_categories(progress=lambda m: print(f"[worker] {m}", flush=True), force=True)
             n = categorise_all(only_uncategorised=params.get("only_uncategorised", False))
         print(f"[worker] categorise job {job['id']}: {n} items")
         return

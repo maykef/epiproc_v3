@@ -95,7 +95,7 @@ def admin_users(request: Request, ok: str = "", err: str = ""):
 def admin_dashboard(request: Request, ok: str = ""):
     me = _admin(request)
     from epiproc.db.settings import (
-        DASHBOARD_TABS, get_categorisation_scheme, get_currency_symbol,
+        DASHBOARD_TABS, get_categories, get_categorisation_scheme, get_currency_symbol,
         get_enabled_tabs, get_price_tracker_key,
     )
     enabled = get_enabled_tabs()
@@ -105,6 +105,7 @@ def admin_dashboard(request: Request, ok: str = ""):
         "currency": get_currency_symbol(),
         "pt_key": get_price_tracker_key(),
         "scheme": get_categorisation_scheme(),
+        "categories": get_categories(),
         "flash_msg": ok,
         "flash_kind": "ok" if ok else "",
     })
@@ -149,6 +150,30 @@ def admin_dashboard_recategorise(request: Request):
     jid = create_job("categorise", {"only_uncategorised": False})
     _audit(request, me, "admin_recategorise", {"job_id": jid})
     return RedirectResponse(f"/admin/dashboard?ok={_enc('Re-categorisation queued (job ' + jid[:8] + '). Refresh the dashboard in a moment.')}", status_code=303)
+
+
+@router.post("/admin/dashboard/categories")
+async def admin_dashboard_categories(request: Request):
+    """Save an edited category vocabulary (one per line / comma-separated)."""
+    me = _admin(request)
+    from epiproc.db.settings import set_categories
+    form = await request.form()
+    raw = (form.get("categories") or "").replace(",", "\n")
+    cats = [c.strip() for c in raw.splitlines() if c.strip()]
+    set_categories(cats)
+    _audit(request, me, "admin_categories_save", {"count": len(cats)})
+    return RedirectResponse(f"/admin/dashboard?ok={_enc('Categories saved. Re-run categorisation to apply.')}", status_code=303)
+
+
+@router.post("/admin/dashboard/rediscover")
+def admin_dashboard_rediscover(request: Request):
+    """Re-derive the category vocabulary from the data with the local model, then
+    re-categorise everything against it."""
+    me = _admin(request)
+    from epiproc.db.jobs import create_job
+    jid = create_job("categorise", {"rediscover": True, "only_uncategorised": False})
+    _audit(request, me, "admin_rediscover", {"job_id": jid})
+    return RedirectResponse(f"/admin/dashboard?ok={_enc('Category discovery queued (job ' + jid[:8] + '). The model will re-derive categories from your data and re-categorise; refresh shortly.')}", status_code=303)
 
 
 @router.post("/admin/dashboard/process")
