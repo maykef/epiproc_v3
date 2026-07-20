@@ -947,10 +947,21 @@ function dataMonthRange(dataArr,monthKey){
   const n=Math.max((y1-y0)*12+(m1-m0)+1,1);
   return monthRange(minYM,n);
 }
-function last12FromData(){
-  const today=new Date();
-  const curYM=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0');
-  return last12Months(curYM);
+function last12FromData(dataArr,monthKey){
+  // Range = oldest month with data → latest month with data, capped at 12.
+  // With >12 months of data, show the latest 12 (anchored on the newest data month, not today).
+  monthKey=monthKey||'month';
+  const yms=(dataArr||[]).map(d=>d[monthKey]).filter(Boolean);
+  if(!yms.length){
+    const today=new Date();
+    return last12Months(today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0'));
+  }
+  const minYM=yms.reduce((a,b)=>a<b?a:b);
+  const maxYM=yms.reduce((a,b)=>a>b?a:b);
+  const[y0,m0]=minYM.split('-').map(Number);
+  const[y1,m1]=maxYM.split('-').map(Number);
+  const span=(y1-y0)*12+(m1-m0)+1;
+  return span<=12?monthRange(minYM,span):last12Months(maxYM);
 }
 
 // ── Monthly by category chart (rebuilds on filter change) ──────────────────
