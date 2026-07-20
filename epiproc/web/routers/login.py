@@ -11,10 +11,15 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
 from epiproc.web.auth import authenticate, verify_totp
-from epiproc.web.security import limiter, audit_log, RATE_LOGIN, _request_ip
+from epiproc.web.security import RATE_LOGIN, RATE_MFA, _request_ip, audit_log, limiter
 from epiproc.web.session import (
-    COOKIE_NAME, MFA_PENDING_COOKIE, COOKIE_SECURE,
-    make_cookie, verify_cookie, make_mfa_cookie, verify_mfa_cookie,
+    COOKIE_NAME,
+    COOKIE_SECURE,
+    MFA_PENDING_COOKIE,
+    make_cookie,
+    make_mfa_cookie,
+    verify_cookie,
+    verify_mfa_cookie,
 )
 from epiproc.web.templates import templates
 
@@ -106,6 +111,7 @@ def mfa_page(request: Request):
 
 
 @router.post("/login/mfa")
+@limiter.limit(RATE_MFA)
 async def mfa_submit(
     request: Request,
     code: Annotated[str, Form()],

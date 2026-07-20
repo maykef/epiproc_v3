@@ -5,6 +5,7 @@ epiproc.db.dashboard; institution branding comes from epiproc.settings.
 """
 from __future__ import annotations
 
+import html
 import json
 from datetime import datetime
 from pathlib import Path
@@ -183,13 +184,33 @@ def _csrf_inject(token: str) -> str:
     )
 
 
+def _js_json(obj) -> str:  # noqa: ANN001
+    """JSON-encode a value for safe embedding inside an inline <script> block.
+
+    json.dumps does not escape "</script>", so a VLM-extracted string (line-item
+    description, seller name) containing that sequence can break out of the script
+    context and execute — and the CSP allows 'unsafe-inline', so it offers no
+    protection. Escaping <, >, & and the U+2028/U+2029 line separators to their
+    \\u-forms keeps the payload valid JSON while making script-context breakout
+    impossible.
+    """
+    return (
+        json.dumps(obj, ensure_ascii=False)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
 def _inline_data(data: dict) -> str:
     return (
         "<script>\n"
-        f"const INVOICES    = {json.dumps(data['invoices'],              ensure_ascii=False)};\n"
-        f"const ITEMS       = {json.dumps(data['items'],                 ensure_ascii=False)};\n"
-        f"let   SVC         = {json.dumps(data['svc'],                   ensure_ascii=False)};\n"
-        f"const SVC_BY_SUP  = {json.dumps(data.get('svc_by_sup', {}),   ensure_ascii=False)};\n"
+        f"const INVOICES    = {_js_json(data['invoices'])};\n"
+        f"const ITEMS       = {_js_json(data['items'])};\n"
+        f"let   SVC         = {_js_json(data['svc'])};\n"
+        f"const SVC_BY_SUP  = {_js_json(data.get('svc_by_sup', {}))};\n"
         "</script>"
     )
 
@@ -306,27 +327,30 @@ def build_dashboard_html(supplier: str, is_admin: bool = False, csrf_token: str 
 
     grand_total = data["grand_total"]
     n_inv = data["n_inv"]
+    # display_name derives from a VLM-extracted seller name — HTML-escape it
+    # everywhere it lands in raw markup (header, KPI sub, filter option).
+    disp = html.escape(data["display_name"])
 
     return _apply(template, {
-        "{{SUP_TITLE}}":             data["display_name"],
+        "{{SUP_TITLE}}":             disp,
         "{{HEADER_SUB}}":            f"{n_inv} invoices  ·  Grand total £{grand_total:,.0f}",
         "{{SUP_TAB}}":               "",
-        "{{SUP_FILTER}}":            f'<option value="{supplier}">{data["display_name"]}</option>',
+        "{{SUP_FILTER}}":            f'<option value="{html.escape(supplier)}">{disp}</option>',
         "{{N_INV}}":                 str(n_inv),
-        "{{KPI_SUP_SUB}}":           f"from {data['display_name']}",
+        "{{KPI_SUP_SUB}}":           f"from {disp}",
         "{{N_ITEMS}}":               str(data["n_items"]),
         "{{CATPIE_CLASS}}":          "card span2",
         "{{SUPPIE_CARD}}":           "",
-        "{{SUP_TOTALS_JSON}}":       json.dumps(data["sup_totals"]),
-        "{{CAT_TOTALS_JSON}}":       json.dumps(data["cat_totals"]),
-        "{{DEPT_TOTALS_JSON}}":      json.dumps(data["dept_totals"]),
-        "{{CAT_DEPT_JSON}}":         json.dumps(data["cat_dept"]),
-        "{{MONTHLY_CAT_JSON}}":      json.dumps(data["monthly_cat"]),
-        "{{MONTHLY_SUP_JSON}}":      json.dumps(data["monthly_sup"]),
-        "{{CAT_SUPPLIER_JSON}}":     json.dumps(data["cat_supplier"]),
-        "{{SUP_NAMES_JSON}}":        json.dumps(data["sup_names"]),
-        "{{SUP_COLORS_JSON}}":       json.dumps(data["sup_colors"]),
-        "{{SUP_KEYS_JSON}}":         json.dumps([supplier]),
+        "{{SUP_TOTALS_JSON}}":       _js_json(data["sup_totals"]),
+        "{{CAT_TOTALS_JSON}}":       _js_json(data["cat_totals"]),
+        "{{DEPT_TOTALS_JSON}}":      _js_json(data["dept_totals"]),
+        "{{CAT_DEPT_JSON}}":         _js_json(data["cat_dept"]),
+        "{{MONTHLY_CAT_JSON}}":      _js_json(data["monthly_cat"]),
+        "{{MONTHLY_SUP_JSON}}":      _js_json(data["monthly_sup"]),
+        "{{CAT_SUPPLIER_JSON}}":     _js_json(data["cat_supplier"]),
+        "{{SUP_NAMES_JSON}}":        _js_json(data["sup_names"]),
+        "{{SUP_COLORS_JSON}}":       _js_json(data["sup_colors"]),
+        "{{SUP_KEYS_JSON}}":         _js_json([supplier]),
         "{{CAT_COLOR_OVERRIDES_JSON}}": "{}",
         "{{LOAD_TIME}}":             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "{{ADMIN_LINK}}":            _ADMIN_LINK if is_admin else "",
@@ -374,16 +398,16 @@ def build_multi_dashboard_html(suppliers: list[str], is_admin: bool = False, csr
         "{{N_ITEMS}}":      str(data["n_items"]),
         "{{CATPIE_CLASS}}": "card span2",
         "{{SUPPIE_CARD}}":  suppie_card,
-        "{{SUP_TOTALS_JSON}}":       json.dumps(data["sup_totals"]),
-        "{{CAT_TOTALS_JSON}}":       json.dumps(data["cat_totals"]),
-        "{{DEPT_TOTALS_JSON}}":      json.dumps(data["dept_totals"]),
-        "{{CAT_DEPT_JSON}}":         json.dumps(data["cat_dept"]),
-        "{{MONTHLY_CAT_JSON}}":      json.dumps(data["monthly_cat"]),
-        "{{MONTHLY_SUP_JSON}}":      json.dumps(data["monthly_sup"]),
-        "{{CAT_SUPPLIER_JSON}}":     json.dumps(data["cat_supplier"]),
-        "{{SUP_NAMES_JSON}}":        json.dumps(data["sup_names"]),
-        "{{SUP_COLORS_JSON}}":       json.dumps(data["sup_colors"]),
-        "{{SUP_KEYS_JSON}}":         json.dumps(data["sup_keys"]),
+        "{{SUP_TOTALS_JSON}}":       _js_json(data["sup_totals"]),
+        "{{CAT_TOTALS_JSON}}":       _js_json(data["cat_totals"]),
+        "{{DEPT_TOTALS_JSON}}":      _js_json(data["dept_totals"]),
+        "{{CAT_DEPT_JSON}}":         _js_json(data["cat_dept"]),
+        "{{MONTHLY_CAT_JSON}}":      _js_json(data["monthly_cat"]),
+        "{{MONTHLY_SUP_JSON}}":      _js_json(data["monthly_sup"]),
+        "{{CAT_SUPPLIER_JSON}}":     _js_json(data["cat_supplier"]),
+        "{{SUP_NAMES_JSON}}":        _js_json(data["sup_names"]),
+        "{{SUP_COLORS_JSON}}":       _js_json(data["sup_colors"]),
+        "{{SUP_KEYS_JSON}}":         _js_json(data["sup_keys"]),
         "{{CAT_COLOR_OVERRIDES_JSON}}": "{}",
         "{{LOAD_TIME}}":             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "{{ADMIN_LINK}}":            _ADMIN_LINK if is_admin else "",

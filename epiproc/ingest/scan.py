@@ -79,21 +79,30 @@ def scan_and_process(progress=None) -> dict:  # noqa: ANN001
                 continue
 
             sha = _sha256(pdf)
-            # Same content already ingested under another name.
+            # Same content already ingested under another name. This stays GLOBAL:
+            # identical bytes really are the same document, whoever sent it.
             if ingested.sha_ingested(conn, sha, exclude_path=path):
                 ingested.record(conn, path, st.st_mtime, sha, None,
                                 "duplicate", "same content as an already-ingested file")
                 counts["duplicate"] += 1
                 continue
-            # Exact filename already an invoice (e.g. pre-existing data).
-            if conn.execute("SELECT 1 FROM invoices WHERE filename = %s",
-                            (pdf.name,)).fetchone():
+
+            hint = _supplier_from_path(pdf, root)
+            # Exact (supplier, filename) already an invoice (e.g. pre-existing
+            # data). Scoped by supplier — two suppliers can each attach
+            # "invoice.pdf", and dropping the second on filename alone silently
+            # loses real spend. Matches the UNIQUE (supplier, filename) constraint.
+            # When the supplier isn't known before extraction (generic inbox, hint
+            # is None) we skip this shortcut and let the pipeline's per-supplier
+            # invoice_number check and the (supplier, filename) upsert dedup.
+            if hint and conn.execute(
+                    "SELECT 1 FROM invoices WHERE filename = %s AND supplier = %s",
+                    (pdf.name, hint)).fetchone():
                 ingested.record(conn, path, st.st_mtime, sha, None,
                                 "duplicate", "filename already present in invoices")
                 counts["duplicate"] += 1
                 continue
 
-            hint = _supplier_from_path(pdf, root)
             cfg = load_config(hint or "_generic")
             res = pipeline.process_pdf(pdf, cfg, client, conn, supplier_hint=hint)
             status = res.get("status")

@@ -139,6 +139,7 @@ limiter = Limiter(key_func=_key_func)
 
 RATE_REPORT_GENERATE = "5/hour"
 RATE_LOGIN = "10/minute"
+RATE_MFA = "10/minute"      # brute-force guard on the 6-digit TOTP second step
 RATE_DASHBOARD = "60/minute"
 RATE_SEARCH = "30/minute"
 RATE_DEFAULT = "120/minute"

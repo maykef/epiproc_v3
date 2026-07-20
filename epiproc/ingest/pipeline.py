@@ -4,7 +4,7 @@ The single place the pipeline order lives (v1 spread it across the Prefect flow 
 the extractor's main()). No Prefect, no docker-in-docker — this runs in-process in
 the worker:
 
-    extract -> rules -> dedup (by invoice_number) -> verify -> insert
+    extract -> rules -> dedup (by supplier + invoice_number) -> verify -> insert
 
 Categorisation runs as a separate batch after a scan (see ingest/scan.py) so a
 whole folder is classified in one pass rather than per file.
@@ -17,7 +17,6 @@ import re
 from epiproc.db.invoices import insert_record
 from epiproc.ingest import pdf_vlm, rules
 from epiproc.settings import settings
-
 
 # Legal-form suffixes stripped so "MM Flowers Europe B.V." and "MM Flowers Europe"
 # collapse to one supplier key instead of two. "b_v" is what "B.V." slugifies to.
@@ -68,13 +67,17 @@ def process_pdf(pdf_path: pathlib.Path, cfg, client, conn,  # noqa: ANN001
     supplier = supplier_hint or slug_supplier(seller) or cfg.supplier or "unknown"
     invoice_number = record.get("invoice_number")
 
-    # Dedup by invoice_number across the whole DB: the same document can arrive as
+    # Dedup by invoice_number WITHIN a supplier: the same document can arrive as
     # "IN022490.pdf" and "IN022490 (1).pdf" — both carry invoice_number IN022490.
+    # Scoping by supplier is essential: two different suppliers can legitimately
+    # both number an invoice "INV-001", and a global match would silently drop the
+    # second supplier's real spend.
     if invoice_number:
         dup = conn.execute(
             "SELECT supplier, filename FROM invoices "
-            "WHERE invoice_number = %s AND invoice_number IS NOT NULL LIMIT 1",
-            (invoice_number,),
+            "WHERE invoice_number = %s AND invoice_number IS NOT NULL "
+            "AND supplier = %s LIMIT 1",
+            (invoice_number, supplier),
         ).fetchone()
         if dup and dup["filename"] != pdf_path.name:
             return {"filename": pdf_path.name, "status": "duplicate",

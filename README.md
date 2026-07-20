@@ -191,8 +191,9 @@ Open `http://<host>:5011` and log in as `admin`.
 ### What happens automatically (no action needed)
 
 With PDFs in `invoices/`, the worker scans on boot and every ~60s (idempotent) and, for
-each new PDF: **extracts** (vision + guided JSON) → applies **rules** → **de-dups** (by
-invoice number / content) → **stores** → **discovers the categories from the data** with
+each new PDF: **extracts** (vision + guided JSON) → applies **rules** → **de-dups**
+(per supplier, by invoice number or content hash) → **stores** → **discovers the
+categories from the data** with
 the local model on first run → **categorises** every line item against that vocabulary →
 **reconciles** line-item sums against invoice totals (flagging mismatches). You can also
 force a pass from **Admin → Dashboard → "Scan & process invoices now"** and re-derive the
@@ -258,6 +259,23 @@ COMMIT=$(git rev-parse --short HEAD)
 docker tag epiproc:3 "epiproc:3.0.0-${COMMIT}"
 docker save "epiproc:3.0.0-${COMMIT}" | gzip > "/mnt/nvme8tb/backups/epiproc-3.0.0-${COMMIT}.tar.gz"
 ```
+
+---
+
+## Tests
+
+A focused pytest suite lives in `tests/` (the extractor's `pymupdf` dependency is
+only needed for the behavioural ingest cases; they self-skip where it is absent):
+
+```bash
+pip install -e ".[test]"
+pytest tests/
+ruff check .
+```
+
+Coverage is deliberately narrow — the script-context escaping of extracted text
+(`_js_json`) and the per-supplier de-duplication (a shared invoice number or
+filename across two suppliers must not drop the second supplier's spend).
 
 ---
 
