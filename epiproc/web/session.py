@@ -9,6 +9,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 from pathlib import Path
 
@@ -32,7 +33,23 @@ def _key() -> bytes:
         return settings.session_key.encode()
     if not _KEY_FILE.exists():
         _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _KEY_FILE.write_text(secrets.token_hex(32))
+        # Create owner-only (0600) from the start — this file is the HMAC session
+        # signing secret; world-readable perms would let anyone who can read it
+        # forge sessions. O_EXCL keeps two processes on first boot from clobbering
+        # each other; the loser just reads what the winner wrote.
+        try:
+            fd = os.open(_KEY_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            pass
+        else:
+            with os.fdopen(fd, "w") as f:
+                f.write(secrets.token_hex(32))
+    else:
+        # Tighten perms on a key file written before this was enforced.
+        try:
+            os.chmod(_KEY_FILE, 0o600)
+        except OSError:
+            pass
     return _KEY_FILE.read_text().strip().encode()
 
 

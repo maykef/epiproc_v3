@@ -55,8 +55,12 @@ def run_migrations() -> list[str]:
             for path in sorted(_MIGRATIONS.glob("*.sql")):
                 if path.name in done:
                     continue
-                conn.execute(path.read_text())
-                conn.execute("INSERT INTO schema_migrations(name) VALUES (%s)", (path.name,))
+                # Apply the whole file and record it in one transaction, so a file
+                # that fails partway rolls back entirely rather than leaving partial
+                # changes applied and unrecorded (which would break the re-run).
+                with conn.transaction():
+                    conn.execute(path.read_text())
+                    conn.execute("INSERT INTO schema_migrations(name) VALUES (%s)", (path.name,))
                 applied.append(path.name)
         finally:
             conn.execute("SELECT pg_advisory_unlock(918273645)")

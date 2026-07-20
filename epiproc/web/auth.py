@@ -15,6 +15,11 @@ from argon2.exceptions import VerifyMismatchError
 
 _ph = PasswordHasher()
 
+# A throwaway argon2 hash verified against the supplied password when the username
+# does not exist, so a missing user takes the same work as a wrong password and
+# can't be distinguished by response time (username enumeration).
+_DUMMY_HASH = _ph.hash("timing-equalisation")
+
 
 def hash_password(password: str) -> str:
     return _ph.hash(password)
@@ -74,9 +79,15 @@ def verify_totp(secret: str, code: str) -> bool:
 
 
 def authenticate(username: str, password: str) -> dict | None:
-    from epiproc.db.users import get_user_by_username, record_last_login, update_user_password
+    from epiproc.db.users import get_user_by_username, update_user_password
     user = get_user_by_username(username)
     if not user:
+        # Do the same argon2 work as a real verify so the timing doesn't reveal
+        # whether the username exists.
+        try:
+            _ph.verify(_DUMMY_HASH, password)
+        except Exception:
+            pass
         return None
     if not _verify_password(user["password_hash"], password):
         return None
@@ -86,5 +97,7 @@ def authenticate(username: str, password: str) -> dict | None:
             update_user_password(user["id"], hash_password(password))
         except Exception:
             pass
-    record_last_login(user["id"])
+    # NB: last-login is recorded by the login routes after full auth (incl. MFA),
+    # not here — recording it at the password step would double-count and would
+    # mark a login before MFA is even satisfied.
     return user
