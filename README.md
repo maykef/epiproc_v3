@@ -1,9 +1,9 @@
 # EpiProc Atlas
 
-**Turn a pile of supplier invoice PDFs into a living map of your spend.**
+**Turn your invoices into a living map of your spend.**
 
-EpiProc Atlas is an AI-powered procurement intelligence platform. You drop in the
-invoices you already receive — messy, multi-format, multi-supplier PDFs — and Atlas
+EpiProc Atlas is an AI-powered procurement intelligence platform. You provide the
+invoices and Atlas
 reads them, structures them, categorises every line item, tracks how prices move over
 time, and surfaces where the money actually goes. No manual data entry, no spreadsheet
 wrangling, no per-supplier templates.
