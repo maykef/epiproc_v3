@@ -160,28 +160,10 @@ _ADMIN_LINK = (
 
 
 def _csrf_inject(token: str) -> str:
-    """Inline CSRF meta tag + fetch/form auto-injector. Mirrors admin/base.html."""
-    if not token:
-        return ""
-    t = json.dumps(token)
-    return (
-        f'<meta name="csrf-token" content="{token}">'
-        f'<script>(function(){{var t={t};'
-        f'var _f=window.fetch;window.fetch=function(url,o){{o=o||{{}};'
-        f"var m=(o.method||'GET').toUpperCase();"
-        f"if(m==='GET'||m==='HEAD'||m==='OPTIONS')return _f(url,o);"
-        f"o.headers=Object.assign({{'X-CSRF-Token':t}},o.headers||{{}});"
-        f'return _f(url,o);}};'
-        f"function p(){{document.querySelectorAll('form').forEach(function(f){{"
-        f"if(f.dataset.csrfDone)return;f.dataset.csrfDone='1';"
-        f"f.addEventListener('submit',function(){{"
-        f"if(!f.querySelector('[name=\"_csrf\"]')){{"
-        f"var i=document.createElement('input');i.type='hidden';"
-        f"i.name='_csrf';i.value=t;f.appendChild(i);}}}});}});}}"
-        f"if(document.readyState==='loading')"
-        f"document.addEventListener('DOMContentLoaded',p);else p();"
-        f"}})();</script>"
-    )
+    """Inline CSRF meta tag + fetch/form auto-injector. Single source in web.csrf,
+    shared with the admin Jinja templates."""
+    from epiproc.web.csrf import csrf_inject_html
+    return csrf_inject_html(token)
 
 
 def _js_json(obj) -> str:  # noqa: ANN001

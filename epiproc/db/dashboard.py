@@ -166,7 +166,7 @@ def get_departments(supplier: str) -> list[dict]:
 def get_monthly_spend(supplier: str) -> list[dict]:
     with pool().connection() as conn:
         rows = conn.execute("""
-            SELECT LEFT(i.invoice_date, 7) AS month,
+            SELECT to_char(i.invoice_date, 'YYYY-MM') AS month,
                    COALESCE(ii.category, 'Uncategorised') AS category,
                    SUM(ii.total_price) AS spend
             FROM invoice_items ii
@@ -215,7 +215,8 @@ def get_spend_matrix(supplier: str) -> list[dict]:
 def get_service_intel(supplier: str) -> list[dict]:
     with pool().connection() as conn:
         rows = conn.execute("""
-            SELECT ii.id, ii.invoice_id, i.invoice_number, i.invoice_date,
+            SELECT ii.id, ii.invoice_id, i.invoice_number,
+                   i.invoice_date::text AS invoice_date,
                    ii.article, ii.description, ii.quantity, ii.unit_price,
                    ii.total_price, i.subscription_start, i.subscription_end,
                    i.service_tier, i.seller_name
@@ -237,7 +238,8 @@ def get_service_intel(supplier: str) -> list[dict]:
 
 _INVOICES_SQL = """
     SELECT
-        i.id, i.filename, i.document_type, i.invoice_number, i.invoice_date,
+        i.id, i.filename, i.document_type, i.invoice_number,
+        i.invoice_date::text AS invoice_date,
         i.currency, i.seller_name, i.buyer_name, i.buyer_department, i.buyer_address,
         i.notes, i.subtotal, i.discount_amount, i.discount_rate_percent,
         i.vat_amount, i.total_amount, i.payment_terms,
@@ -258,7 +260,7 @@ _ITEMS_SQL_BASE = """
     SELECT
         ii.id, ii.invoice_id, ii.description, ii.article,
         ii.quantity, ii.unit, ii.unit_price, ii.total_price, ii.category, ii.variety,
-        i.invoice_number, i.invoice_date, i.currency, i.buyer_name,
+        i.invoice_number, i.invoice_date::text AS invoice_date, i.currency, i.buyer_name,
         i.buyer_department, i.buyer_address, i.notes, i.document_type,
         i.filename, i.total_amount, i.seller_name, i.subscription_start,
         i.subscription_end, i.validation_warning, i.extraction_error,
@@ -709,6 +711,30 @@ def _dash_svc(items: list[dict]) -> dict:
     }
 
 
+# Fields the dashboard's client JS actually reads from each inlined ITEMS /
+# INVOICES element (per the field-usage audit). The row queries deliberately
+# fetch more than this — the extra columns drive server-side derivation
+# (department normalisation, aggregates, service intel) — but only these are
+# inlined into the page, so the payload doesn't carry ~20 unused columns on every
+# row. The item array is the one that grows with the data, so this is where the
+# "whole DB in the page" growth is contained.
+_ITEM_KEEP = frozenset({
+    "invoice_id", "description", "article", "quantity", "unit_price", "total_price",
+    "category", "variety", "invoice_number", "invoice_date", "filename",
+    "department", "supplier", "supplier_name", "supplier_color", "comment",
+})
+_INVOICE_KEEP = frozenset({
+    "id", "filename", "document_type", "invoice_number", "invoice_date", "currency",
+    "buyer_department", "subtotal", "discount_amount", "total_amount",
+    "validation_warning", "extraction_error", "your_reference",
+    "department", "supplier", "supplier_name", "supplier_color", "pdf_url", "thumb",
+})
+
+
+def _slim(d: dict, keep: frozenset) -> dict:
+    return {k: v for k, v in d.items() if k in keep}
+
+
 def get_dashboard_data(supplier: str) -> dict:
     cfg = load_config(supplier, CONFIGS_DIR)
     display_name = cfg.dashboard.get("display_name", supplier.title())
@@ -775,8 +801,10 @@ def get_dashboard_data(supplier: str) -> dict:
         "color": color,
         "n_inv": len(invoices),
         "n_items": len(items),
-        "invoices": invoices,
-        "items": items,
+        # Inline only the client-read fields; aggregates below still use the full
+        # rows. This is what keeps the page payload from growing with every column.
+        "invoices": [_slim(inv, _INVOICE_KEEP) for inv in invoices],
+        "items": [_slim(it, _ITEM_KEEP) for it in items],
         "sup_totals": _dash_sup_totals(invoices, items, display_name, color),
         "cat_totals": _dash_cat_totals(items),
         "dept_totals": _dash_dept_totals(invoices),

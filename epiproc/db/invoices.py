@@ -5,11 +5,26 @@ Idempotent on (supplier, filename): re-processing replaces the prior rows.
 """
 from __future__ import annotations
 
+import datetime
 import json
 
 
 def _num(v):
     return v if isinstance(v, (int, float)) else None
+
+
+def _date(v):
+    """Normalise an extracted invoice_date to a date, or None. invoice_date is a
+    DATE column now, so a malformed string must become NULL rather than raise and
+    abort the insert."""
+    if isinstance(v, datetime.date):
+        return v
+    if isinstance(v, str) and len(v) >= 10:
+        try:
+            return datetime.date.fromisoformat(v[:10])
+        except ValueError:
+            return None
+    return None
 
 
 def insert_record(conn, supplier: str, filename: str, record: dict,
@@ -39,7 +54,7 @@ def insert_record(conn, supplier: str, filename: str, record: dict,
                    %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s)
            RETURNING id""",
         (supplier, filename, rec.get("document_type"), rec.get("invoice_number"),
-         rec.get("invoice_date"), rec.get("currency"),
+         _date(rec.get("invoice_date")), rec.get("currency"),
          seller.get("name"), buyer.get("name"), buyer.get("department"),
          buyer.get("address"), buyer.get("customer_number"),
          ship.get("name"), ship.get("department"), ship.get("address"),

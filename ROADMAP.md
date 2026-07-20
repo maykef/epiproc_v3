@@ -1,42 +1,21 @@
 # Roadmap & known limitations
 
-Tracked work that is intentionally deferred, with the intended approach and the
-risks that make each one more than a quick patch.
+Tracked work, with the intended approach and the risks behind each.
 
-## Dashboard payload — paginate instead of shipping the whole dataset
+## Dashboard payload — full pagination (partially addressed)
 
-**Today:** `build_(multi_)dashboard_html` inlines the full `INVOICES` and `ITEMS`
-arrays into the page (`dashboard_html._inline_data`), and every chart reads from
-those globals. This is fine at the current scale (tens of invoices) but grows
-linearly — a large customer would ship megabytes on every load.
+**Done:** the inlined `ITEMS`/`INVOICES` arrays now carry only the fields the
+client JS actually reads — the row queries still fetch the rest for server-side
+derivation (department normalisation, aggregates, service intel), but ~20 unused
+columns per row are stripped before inlining (`dashboard._slim`). The item array
+(the one that grows with the data) dropped from ~35 to ~16 fields per row.
 
-**Planned approach:**
-- Move aggregates (category/supplier/department totals, monthly series) to
-  server-side SQL endpoints that return only the rolled-up numbers the charts need.
-- Serve the invoice/line-item tables from a paged endpoint (`/api/items?…`) with
-  server-side filtering and sorting; the client fetches pages on demand.
-- Keep the current inline path as a fast route for small instances.
-
-**Risk / why deferred:** the dashboard's client JS assumes the full `INVOICES`
-/`ITEMS` arrays are present; this touches nearly every chart and the search/table
-views. It is a redesign, not a patch, and needs its own testing pass.
-
-## Invoice dates — store as `DATE`, not `TEXT`
-
-**Today:** `invoices.invoice_date` is `TEXT` holding an ISO string
-(`0001_core.sql`). Ordering works because ISO strings sort lexically, but range
-queries and date maths are string-based and non-ISO values are not caught.
-
-**Planned approach:**
-- Audit existing values for anything not `YYYY-MM-DD` parseable.
-- Migration: add `invoice_date_d DATE`, backfill with a safe cast
-  (`NULLIF` / regex-guarded), verify counts, then swap columns and update the
-  extractor/insert path and queries.
-
-**Risk / why deferred:** a naive `ALTER … TYPE date USING invoice_date::date`
-fails on any unparseable value in live data and touches the ingest write path and
-several queries. It needs a data-validation step first and careful, reversible
-migration.
+**Still open:** the page still inlines *every* row. For very large instances the
+next step is server-side pagination — serve the invoice/line-item tables from a
+paged endpoint (`/api/items?…`) with server-side filter/sort, and have the
+client-side supplier filter round-trip instead of re-aggregating the full arrays.
+Deferred because it touches nearly every chart plus the search/table views and is
+a redesign, not a patch.
 
 ## Known minor items
 
@@ -44,6 +23,4 @@ migration.
   `<script>` context; VLM strings are still inserted via `innerHTML` in the
   template's client JS (e.g. `populateSearchSuppliers`, table renderers). Sanitise
   on insert (`textContent`/escape) to close it fully.
-- **Duplicated inline scripts** — the CSRF injector is mirrored between
-  `dashboard_html._csrf_inject` and `admin/base.html`; candidate for a shared include.
 - **Reports** — parameterised report generation is in progress (see README).
