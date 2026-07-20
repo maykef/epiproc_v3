@@ -101,6 +101,15 @@ def _reconcile_totals(rec: dict) -> tuple[dict, str | None]:
         v = tot.get(k)
         return v if isinstance(v, (int, float)) else 0.0
 
+    # If the line items already reconcile to the invoice total, every dashboard
+    # view agrees — categories are summed from line items, supplier/month spend
+    # from the invoice total — so the invoice is consistent. A mis-read *subtotal*
+    # (e.g. the VLM lifting a VAT-base figure instead of the true subtotal, when
+    # deposits/charges are themselves itemised) is then immaterial and must not
+    # raise a reconciliation warning. This is the common false positive.
+    if items and isinstance(total, (int, float)) and not _off(line_sum, total):
+        return rec, None
+
     # 1. Line items should reconcile to the subtotal (net of charges).
     if items and isinstance(subtotal, (int, float)) and _off(line_sum, subtotal):
         warns.append(f"line items sum {line_sum:.2f} ≠ subtotal {subtotal:.2f} "
