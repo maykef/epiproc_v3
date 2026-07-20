@@ -225,7 +225,7 @@ Three independent things to protect — they are backed up in different places:
 |------|----------------------|
 | **Engine code** | GitHub (`origin/master`) — full history is the backup; `docker build` recreates a working image anytime |
 | **Engine image** (exact, tested) | Local tarball under `/mnt/nvme8tb/backups/` (kept off any registry) |
-| **Customer data** (irreplaceable) | The customer's own `/mnt/nvme8tb/customers/<name>/` folder — back it up locally/offsite; never to GitHub |
+
 
 ### Restore the engine image (offline, no rebuild)
 
@@ -261,24 +261,3 @@ docker save "epiproc:3.0.0-${COMMIT}" | gzip > "/mnt/nvme8tb/backups/epiproc-3.0
 
 ---
 
-## Status (2026-07-20)
-
-Operational end-to-end and running on a first production customer instance
-(`floral_portal`).
-
-| Area | State |
-|------|-------|
-| Engine image `epiproc:3` + per-customer container (app + Postgres sidecar) | ✅ done |
-| **Extraction** — per-page vision + guided JSON (`response_format` json_schema) | ✅ done |
-| **Rules** — declarative ops (credit-note sign, derive-total, drop HS-code summary) | ✅ done |
-| **Categorisation** — two-level category + variety, per-customer scheme, worker job | ✅ done |
-| Web / authentication / administration / dashboard plane | ✅ done |
-| Per-customer settings (tabs, currency, price-tracker mode, scheme) + **Admin → Dashboard** editor | ✅ done |
-| Dashboard: spend intel, price tracker, Service/Reagents Intel, drill-downs, treemap | ✅ done |
-| **Auto-processing** — worker scans `invoices/` on a timer, runs extract → rules → dedup → store → categorise; also an `extract` job + Admin button | ✅ done |
-| **Dedup** — by `invoice_number` (pipeline) + content hash & `ingested_files` ledger (scan); idempotent, GPU-safe re-scans | ✅ done |
-| Verify — light non-blocking status check wired; full v1 C0–C5 checks pending port (`legacy/verify_v1_sqlite.py`) | partial |
-| **Reports** engine (`epiproc/reports/`, `/reports` router, report jobs) | not built (P4) |
-| Extraction truncation-retry; production hardening (secure cookies, self-service password reset); tests/CI | pending |
-
-See `docs/AUDIT.md` for the keep/rewrite/drop assessment this repository is built from.
