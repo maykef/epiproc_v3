@@ -111,14 +111,109 @@ servers**, or run on the customer's **preferred cloud provider**. In every case 
 customer's invoices and database remain within the environment they select, and no data
 is shared with any external party.
 
-### Deploy a customer
+## Create a new customer — manual runbook
+
+Run from the host that holds the customer instances (paths below assume
+`/mnt/nvme8tb`). This is the full, unassisted procedure.
+
+### Prerequisites (once)
+
+1. **Build the engine image locally** and reuse it for every customer:
+   ```bash
+   cd /mnt/nvme8tb/epiproc_v3
+   docker build -t epiproc:3 -f docker/Dockerfile .
+   ```
+   Rebuild only when the engine code changes.
+2. **The shared vLLM GPU server is running** on `:8000`, serving the model named in
+   `EPIPROC_VLLM_URL` / `vllm_model` (currently `qwen3.5-122b`). Every customer talks to
+   this one server for extraction and categorisation.
+
+### 1. Scaffold the instance
 
 ```bash
-python cli.py new acme 5011 --institution "ACME University"
-cp docker/docker-compose.template.yml /mnt/nvme8tb/customers/acme/compose.yml
-cd /mnt/nvme8tb/customers/acme && docker compose up -d
-# -> migrations run, empty dashboard at :5011. Add PDFs to invoices/, then process.
+cd /mnt/nvme8tb/epiproc_v3
+python cli.py new acme 5011 --institution "ACME Ltd"
 ```
+`acme` = instance name, `5011` = the **host** port (must be free and unique per
+customer). This creates `/mnt/nvme8tb/customers/acme/` with the data folders
+(`invoices/ pgdata/ configs/ reports/ …`) and a `.env` holding a generated DB password
+(written to both `POSTGRES_PASSWORD` and the DSN so they match), a session key, and the
+vLLM URL.
+
+> `cli.py up`/`down`/`process` are stubs — use `docker compose` directly (below).
+
+### 2. Add the compose file
+
+```bash
+cp docker/docker-compose.template.yml /mnt/nvme8tb/customers/acme/compose.yml
+```
+
+### 3. Drop in the invoices
+
+```bash
+cp /path/to/their/*.pdf /mnt/nvme8tb/customers/acme/invoices/inbox/
+```
+`invoices/inbox/` is the generic drop-box (supplier is derived from the extracted seller
+name). Alternatively use `invoices/<supplier_name>/` to force the supplier by folder.
+
+### 4. Start it
+
+```bash
+cd /mnt/nvme8tb/customers/acme
+docker compose up -d
+```
+Runs DB migrations, then launches the web app (container port 5001, published on your
+`5011`) and the worker.
+
+### 5. Create the first admin ⚠️
+
+A fresh instance has **no users** — there is no automatic admin bootstrap yet, so create
+the first admin once:
+```bash
+docker exec acme-app-1 python -c "
+from epiproc.db.pool import init_pool; init_pool()
+from epiproc.db.users import create_user
+from epiproc.web.auth import hash_password
+create_user('admin', hash_password('CHANGE-ME-NOW'), role='admin', display_name='Admin')
+print('admin created')
+"
+```
+Container names are `<folder>-app-1` / `<folder>-db-1`. Add more users later from
+**Admin → Users**.
+
+### 6. Log in and verify
+
+```bash
+curl -s http://localhost:5011/health   # -> {"status":"ok", ... "institution":"ACME Ltd"}
+```
+Open `http://<host>:5011` and log in as `admin`.
+
+### What happens automatically (no action needed)
+
+With PDFs in `invoices/`, the worker scans on boot and every ~60s (idempotent) and, for
+each new PDF: **extracts** (vision + guided JSON) → applies **rules** → **de-dups** (by
+invoice number / content) → **stores** → **discovers the categories from the data** with
+the local model on first run → **categorises** every line item against that vocabulary →
+**reconciles** line-item sums against invoice totals (flagging mismatches). You can also
+force a pass from **Admin → Dashboard → "Scan & process invoices now"** and re-derive the
+taxonomy with **"Re-derive from data"**.
+
+### Optional tuning (Admin → Dashboard, no rebuild)
+
+Visible **tabs**, **currency**, **price-tracker grouping**, the **discovered categories**
+(editable), and optional free-text **categorisation guidance** — all per customer.
+
+### Day-2 operations
+
+```bash
+cd /mnt/nvme8tb/customers/acme
+docker compose logs -f app     # watch processing
+docker compose stop | start    # pause / resume
+docker compose down            # remove containers (data in ./pgdata survives)
+docker compose up -d           # after an image rebuild, recreates on the new epiproc:3
+```
+Everything customer-specific lives in `/mnt/nvme8tb/customers/acme/` — back up that
+folder (especially `pgdata/` and `invoices/`) and the customer is backed up.
 
 ---
 
