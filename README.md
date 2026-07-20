@@ -219,7 +219,7 @@ folder (especially `pgdata/` and `invoices/`) and the customer is backed up.
 
 ## Backup & restore
 
-Three independent things to protect — they are backed up in different places:
+Two independent things to protect — they are backed up in different places:
 
 | What | Where it's backed up |
 |------|----------------------|
