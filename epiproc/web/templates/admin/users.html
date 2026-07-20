@@ -117,7 +117,7 @@
         {% if not u.is_self %}
         <form class="inline" method="post" action="/admin/users/{{ u.id }}/toggle">
           <button class="btn {{ 'btn-danger' if u.active else 'btn-ghost' }} btn-sm" type="submit"
-                  onclick="return confirm('{{ 'Deactivate' if u.active else 'Activate' }} {{ u.username }}?')">
+                  data-confirm="{{ 'Deactivate' if u.active else 'Activate' }} {{ u.username }}?">
             {{ 'Deactivate' if u.active else 'Activate' }}
           </button>
         </form>

@@ -12,7 +12,7 @@
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
     <h2 style="margin:0">{{ sessions | length }} active session{{ 's' if sessions | length != 1 else '' }}</h2>
     <form method="post" action="/admin/users/{{ target.id }}/sessions/revoke-all"
-          onsubmit="return confirm('Revoke all sessions for {{ target.username }}? They will be signed out immediately.')">
+          data-confirm="Revoke all sessions for {{ target.username }}? They will be signed out immediately.">
       <button class="btn btn-danger btn-sm" type="submit">Revoke all</button>
     </form>
   </div>

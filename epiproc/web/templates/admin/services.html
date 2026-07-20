@@ -55,15 +55,15 @@
     <div class="ctrls">
       <form class="inline" method="post" action="/admin/services/vllm/start">
         <button type="submit" class="btn btn-primary btn-sm"
-                onclick="return confirm('Start vLLM?')">Start</button>
+                data-confirm="Start vLLM?">Start</button>
       </form>
       <form class="inline" method="post" action="/admin/services/vllm/restart">
         <button type="submit" class="btn btn-ghost btn-sm"
-                onclick="return confirm('Restart vLLM? Model reload takes ~3 min.')">Restart</button>
+                data-confirm="Restart vLLM? Model reload takes ~3 min.">Restart</button>
       </form>
       <form class="inline" method="post" action="/admin/services/vllm/stop">
         <button type="submit" class="btn btn-danger btn-sm"
-                onclick="return confirm('Stop vLLM? In-flight report jobs will fail.')">Stop</button>
+                data-confirm="Stop vLLM? In-flight report jobs will fail.">Stop</button>
       </form>
     </div>
 

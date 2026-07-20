@@ -6,7 +6,7 @@
   <h1 style="margin:0">Usage Analytics</h1>
   <form method="get" action="/admin/usage" style="display:flex;align-items:center;gap:8px">
     <label style="margin:0;text-transform:none;font-size:13px;color:var(--muted)">Last</label>
-    <select name="days" onchange="this.form.submit()" style="width:auto;padding:5px 10px">
+    <select name="days" data-autosubmit style="width:auto;padding:5px 10px">
       <option value="7"  {% if days==7  %}selected{% endif %}>7 days</option>
       <option value="30" {% if days==30 %}selected{% endif %}>30 days</option>
       <option value="90" {% if days==90 %}selected{% endif %}>90 days</option>

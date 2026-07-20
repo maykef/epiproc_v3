@@ -212,8 +212,8 @@ def _tab_toggle_js() -> str:
         "<script>document.addEventListener('DOMContentLoaded',function(){"
         f"var EN={json.dumps(enabled)};"
         "document.querySelectorAll('nav .tab').forEach(function(t){"
-        "var m=(t.getAttribute('onclick')||'').match(/showPage\\('([a-z]+)'/);"
-        "if(m&&EN.indexOf(m[1])===-1)t.style.display='none';});"
+        "var m=t.getAttribute('data-page');"
+        "if(m&&EN.indexOf(m)===-1)t.style.display='none';});"
         f"{json.dumps(_ALL)}.forEach(function(k){{"
         "if(EN.indexOf(k)===-1){var p=document.getElementById('page-'+k);"
         "if(p){p.style.display='none';p.classList.remove('active');}}});"
@@ -357,12 +357,12 @@ def build_multi_dashboard_html(suppliers: list[str], is_admin: bool = False, csr
     sup_filter = (
         '<div id="global-sup-wrap">'
         '<span>Supplier:</span>'
-        '<select id="global-sup" autocomplete="off" onchange="applyGlobalSupFilter()">'
+        '<select id="global-sup" autocomplete="off" data-change="applyGlobalSupFilter">'
         '<option value="">All</option>'
         '</select>'
         '</div>'
     )
-    sup_tab = '<div class="tab" onclick="showPage(\'suppliers\',this)">By Supplier</div>'
+    sup_tab = '<div class="tab" data-click="showPage" data-page="suppliers">By Supplier</div>'
     suppie_card = (
         '<div class="card span2" id="suppie-card-wrap">'
         '<h2>Spend by Supplier (£ — item level)</h2>'

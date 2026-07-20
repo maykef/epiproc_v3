@@ -23,6 +23,15 @@ _INVOICES_DIR = Path(settings.data_dir) / "invoices"
 router = APIRouter(include_in_schema=False)
 
 
+def _stamp_nonce(html: str, request: Request) -> str:
+    """Stamp the request's CSP nonce onto every inline <script> so it runs under
+    the nonce CSP (which no longer allows 'unsafe-inline'). External
+    <script src=...> tags carry attributes and are untouched; VLM data is
+    HTML-escaped on insert, so a literal '<script>' can't appear inside it."""
+    nonce = getattr(request.state, "csp_nonce", "")
+    return html.replace("<script>", f'<script nonce="{nonce}">') if nonce else html
+
+
 def _available(user: dict) -> list[str]:
     allowed = user.get("suppliers", [])
     return [s for s in get_suppliers() if not allowed or s in allowed]
@@ -43,8 +52,10 @@ def dashboard_index(
     if not available:
         raise HTTPException(status_code=403, detail="No suppliers available.")
     csrf_token = getattr(request.state, "csrf_token", "")
+    html = build_multi_dashboard_html(
+        available, is_admin=current_user.get("role") == "admin", csrf_token=csrf_token)
     return HTMLResponse(
-        build_multi_dashboard_html(available, is_admin=current_user.get("role") == "admin", csrf_token=csrf_token),
+        _stamp_nonce(html, request),
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
@@ -63,8 +74,10 @@ def dashboard_supplier(
     if supplier not in get_suppliers():
         raise HTTPException(status_code=404, detail=f"Supplier '{supplier}' not found.")
     csrf_token = getattr(request.state, "csrf_token", "")
+    html = build_dashboard_html(
+        supplier, is_admin=current_user.get("role") == "admin", csrf_token=csrf_token)
     return HTMLResponse(
-        build_dashboard_html(supplier, is_admin=current_user.get("role") == "admin", csrf_token=csrf_token),
+        _stamp_nonce(html, request),
         headers={"Cache-Control": "no-store"},
     )
 

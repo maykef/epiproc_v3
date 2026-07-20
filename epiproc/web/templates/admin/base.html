@@ -66,7 +66,21 @@ details summary{cursor:pointer;color:var(--accent);font-size:13px;
                 font-weight:600;padding:4px 0;user-select:none}
 details[open] summary{margin-bottom:16px}
 </style>
-{{ csrf_inject(request.state.csrf_token) | safe }}
+{{ csrf_inject(request.state.csrf_token, request.state.csp_nonce) | safe }}
+<script nonce="{{ request.state.csp_nonce }}">
+// Admin interactions under the nonce CSP (no inline on* handlers): confirm()
+// guards move to data-confirm (on a form or its submit button); an auto-submit
+// select uses data-autosubmit. Dispatched by delegation.
+(function(){
+  document.addEventListener('submit',function(e){
+    var m=(e.submitter&&e.submitter.getAttribute('data-confirm'))||e.target.getAttribute('data-confirm');
+    if(m&&!confirm(m))e.preventDefault();
+  });
+  document.addEventListener('change',function(e){
+    if(e.target.matches&&e.target.matches('[data-autosubmit]'))e.target.form.submit();
+  });
+})();
+</script>
 </head>
 <body>
 <nav role="navigation" aria-label="Admin navigation">

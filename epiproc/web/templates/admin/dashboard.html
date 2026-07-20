@@ -63,11 +63,11 @@
   </form>
   <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
     <form method="post" action="/admin/dashboard/rediscover"
-          onsubmit="return confirm('Re-derive categories from your data with the local model, then re-categorise everything?')">
+          data-confirm="Re-derive categories from your data with the local model, then re-categorise everything?">
       <button type="submit" class="btn">✦ Re-derive from data</button>
     </form>
     <form method="post" action="/admin/dashboard/recategorise"
-          onsubmit="return confirm('Re-run categorisation on all invoices with the current categories?')">
+          data-confirm="Re-run categorisation on all invoices with the current categories?">
       <button type="submit" class="btn" style="background:var(--surf2)">↻ Re-run categorisation</button>
     </form>
   </div>
@@ -95,7 +95,7 @@
     process new files immediately instead of waiting for the next automatic scan.
   </p>
   <form method="post" action="/admin/dashboard/process"
-        onsubmit="return confirm('Scan the invoices folder and extract any new PDFs now?')">
+        data-confirm="Scan the invoices folder and extract any new PDFs now?">
     <button type="submit" class="btn">⤓ Scan &amp; process invoices now</button>
     <span style="color:var(--muted);font-size:11px;margin-left:8px">Idempotent — already-processed files are skipped.</span>
   </form>

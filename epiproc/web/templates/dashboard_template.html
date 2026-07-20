@@ -169,6 +169,9 @@ tr:hover td{background:rgba(108,124,255,.06);}
 .rpt-arc-open:hover{opacity:.85;}
 .rpt-arc-del{background:transparent;color:var(--muted);border:1px solid var(--border);}
 .rpt-arc-del:hover{background:#ff6b6b22;color:#ff6b6b;border-color:#ff6b6b;}
+/* Report archive card hover (replaces removed inline onmouseover/onmouseout, CSP) */
+.rpt-card:hover{border-color:var(--accent)!important;}
+.rpt-del:hover{background:#ff6b6b22!important;color:#ff6b6b!important;}
 </style>
 </head>
 <body>
@@ -184,17 +187,17 @@ tr:hover td{background:rgba(108,124,255,.06);}
 </header>
 
 <nav>
-  <div class="tab active" onclick="showPage('overview',this)">Overview</div>
+  <div class="tab active" data-click="showPage" data-page="overview">Overview</div>
   {{SUP_TAB}}
-  <div class="tab" onclick="showPage('categories',this)">By Category</div>
-  <div class="tab" onclick="showPage('departments',this)">By Department</div>
-  <div class="tab" onclick="showPage('invoices',this)">Invoices</div>
-  <div class="tab" onclick="showPage('pricetracker',this)">📈 Price Tracker</div>
-  <div class="tab" onclick="showPage('svccontracts',this)" style="color:#4ecdc4">⚙ Service Intel</div>
-  <div class="tab" onclick="showPage('reagents',this)" style="color:#a78bfa">🧪 Reagents Intel</div>
-  <div class="tab" onclick="showPage('reports',this);initReports()" style="color:#f4a261">📊 Reports</div>
+  <div class="tab" data-click="showPage" data-page="categories">By Category</div>
+  <div class="tab" data-click="showPage" data-page="departments">By Department</div>
+  <div class="tab" data-click="showPage" data-page="invoices">Invoices</div>
+  <div class="tab" data-click="showPage" data-page="pricetracker">📈 Price Tracker</div>
+  <div class="tab" data-click="showPage" data-page="svccontracts" style="color:#4ecdc4">⚙ Service Intel</div>
+  <div class="tab" data-click="showPage" data-page="reagents" style="color:#a78bfa">🧪 Reagents Intel</div>
+  <div class="tab" data-click="showPage" data-page="reports" data-init="initReports" style="color:#f4a261">📊 Reports</div>
   <div class="nav-sep"></div>
-  <button id="search-btn" onclick="openSearch()" title="Semantic search (Ctrl+K)">
+  <button id="search-btn" data-click="openSearch" title="Semantic search (Ctrl+K)">
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     Search
   </button>
@@ -203,13 +206,13 @@ tr:hover td{background:rgba(108,124,255,.06);}
 </nav>
 
 <!-- SEMANTIC SEARCH OVERLAY ──────────────────────────────────────────── -->
-<div id="search-overlay" onclick="if(event.target===this)closeSearch()">
+<div id="search-overlay" data-click="modalCloseSearch">
   <div id="search-panel">
     <div id="search-head">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input id="search-input" type="text" placeholder="Search all invoice line items…">
-      <button id="search-csv-btn" onclick="downloadSearchCSV()" style="display:none;background:var(--surf2);border:1px solid var(--border);color:var(--muted);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;white-space:nowrap">↓ CSV</button>
-      <button id="search-close" onclick="closeSearch()">✕</button>
+      <button id="search-csv-btn" data-click="downloadSearchCSV" style="display:none;background:var(--surf2);border:1px solid var(--border);color:var(--muted);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;white-space:nowrap">↓ CSV</button>
+      <button id="search-close" data-click="closeSearch">✕</button>
     </div>
     <div id="search-filters">
       <!-- Populated per tenant from SUP_KEYS/SUP_NAMES by populateSearchSuppliers() -->
@@ -286,7 +289,7 @@ tr:hover td{background:rgba(108,124,255,.06);}
   <div class="card">
     <h2>Top Items per Category</h2>
     <div class="controls">
-      <select id="cat-filter-sel" onchange="renderTopItems()"><option value="">All Categories</option></select>
+      <select id="cat-filter-sel" data-change="renderTopItems"><option value="">All Categories</option></select>
     </div>
     <div class="tbl-wrap"><table>
       <thead><tr><th>Supplier</th><th>Category</th><th>Department</th><th>Description</th><th>Article</th><th class="num">Qty</th><th class="num">Unit £</th><th class="num">Total £</th><th>Date</th></tr></thead>
@@ -317,7 +320,7 @@ tr:hover td{background:rgba(108,124,255,.06);}
   <div class="card">
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
       <h2 id="inv-view-title" style="margin:0">All Invoices</h2>
-      <select id="inv-view-sel" onchange="switchInvView()" style="font-size:12px;padding:4px 8px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:6px">
+      <select id="inv-view-sel" data-change="switchInvView" style="font-size:12px;padding:4px 8px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:6px">
         <option value="invoices">Invoices</option>
         <option value="lineitems">Line Items</option>
       </select>
@@ -325,10 +328,10 @@ tr:hover td{background:rgba(108,124,255,.06);}
 
     <!-- Invoice controls + table -->
     <div id="inv-ctrl" class="controls">
-      <input type="text" id="inv-search" placeholder="Search invoice #, file, reference…" oninput="filterInvoices()">
-      <select id="inv-sup" onchange="filterInvoices()"><option value="">All Suppliers</option></select>
-      <select id="inv-dept" onchange="filterInvoices()"><option value="">All Departments</option></select>
-      <select id="inv-type" onchange="filterInvoices()">
+      <input type="text" id="inv-search" placeholder="Search invoice #, file, reference…" data-input="filterInvoices">
+      <select id="inv-sup" data-change="filterInvoices"><option value="">All Suppliers</option></select>
+      <select id="inv-dept" data-change="filterInvoices"><option value="">All Departments</option></select>
+      <select id="inv-type" data-change="filterInvoices">
         <option value="">All Types</option>
         <option>invoice</option><option>consolidated invoice</option>
         <option>service invoice</option><option>contract invoice</option>
@@ -338,16 +341,16 @@ tr:hover td{background:rgba(108,124,255,.06);}
     <div id="inv-section">
       <div class="tbl-wrap" style="max-height:none;"><table>
         <thead><tr>
-          <th onclick="sortInv('invoice_date')">Date ↕</th>
-          <th onclick="sortInv('supplier_name')">Supplier ↕</th>
-          <th onclick="sortInv('invoice_number')">Invoice # ↕</th>
-          <th onclick="sortInv('document_type')">Type ↕</th>
-          <th onclick="sortInv('department')">Department ↕</th>
-          <th onclick="sortInv('buyer_department')">Sub-dept ↕</th>
-          <th onclick="sortInv('subtotal')" style="text-align:right">Subtotal ↕</th>
-          <th onclick="sortInv('discount_amount')" style="text-align:right">Disc £ ↕</th>
+          <th data-click="sortInv" data-arg="invoice_date">Date ↕</th>
+          <th data-click="sortInv" data-arg="supplier_name">Supplier ↕</th>
+          <th data-click="sortInv" data-arg="invoice_number">Invoice # ↕</th>
+          <th data-click="sortInv" data-arg="document_type">Type ↕</th>
+          <th data-click="sortInv" data-arg="department">Department ↕</th>
+          <th data-click="sortInv" data-arg="buyer_department">Sub-dept ↕</th>
+          <th data-click="sortInv" data-arg="subtotal" style="text-align:right">Subtotal ↕</th>
+          <th data-click="sortInv" data-arg="discount_amount" style="text-align:right">Disc £ ↕</th>
           <th style="text-align:right">Disc %</th>
-          <th onclick="sortInv('total_amount')" style="text-align:right">Net Total ↕</th>
+          <th data-click="sortInv" data-arg="total_amount" style="text-align:right">Net Total ↕</th>
           <th>Currency</th><th>Status</th><th>File</th>
         </tr></thead>
         <tbody id="inv-body"></tbody>
@@ -357,23 +360,23 @@ tr:hover td{background:rgba(108,124,255,.06);}
 
     <!-- Line Items controls + table -->
     <div id="li-ctrl" class="controls" style="display:none">
-      <input type="text" id="li-search" placeholder="Search description, article…" oninput="filterItems()">
-      <select id="li-sup" onchange="filterItems()"><option value="">All Suppliers</option></select>
-      <select id="li-cat" onchange="filterItems()"><option value="">All Categories</option></select>
-      <select id="li-dept" onchange="filterItems()"><option value="">All Departments</option></select>
+      <input type="text" id="li-search" placeholder="Search description, article…" data-input="filterItems">
+      <select id="li-sup" data-change="filterItems"><option value="">All Suppliers</option></select>
+      <select id="li-cat" data-change="filterItems"><option value="">All Categories</option></select>
+      <select id="li-dept" data-change="filterItems"><option value="">All Departments</option></select>
     </div>
     <div id="li-section" style="display:none">
       <div class="tbl-wrap" style="max-height:none;"><table>
         <thead><tr>
-          <th onclick="sortItems('invoice_date')">Date ↕</th>
-          <th onclick="sortItems('supplier_name')">Supplier ↕</th>
-          <th onclick="sortItems('category')">Category ↕</th>
-          <th onclick="sortItems('department')">Department ↕</th>
-          <th onclick="sortItems('description')">Description ↕</th>
+          <th data-click="sortItems" data-arg="invoice_date">Date ↕</th>
+          <th data-click="sortItems" data-arg="supplier_name">Supplier ↕</th>
+          <th data-click="sortItems" data-arg="category">Category ↕</th>
+          <th data-click="sortItems" data-arg="department">Department ↕</th>
+          <th data-click="sortItems" data-arg="description">Description ↕</th>
           <th>Article</th>
-          <th class="num" onclick="sortItems('quantity')">Qty ↕</th>
-          <th class="num" onclick="sortItems('unit_price')">Unit £ ↕</th>
-          <th class="num" onclick="sortItems('total_price')">Total £ ↕</th>
+          <th class="num" data-click="sortItems" data-arg="quantity">Qty ↕</th>
+          <th class="num" data-click="sortItems" data-arg="unit_price">Unit £ ↕</th>
+          <th class="num" data-click="sortItems" data-arg="total_price">Total £ ↕</th>
           <th>Invoice #</th>
           <th>Comment</th>
         </tr></thead>
@@ -391,10 +394,10 @@ tr:hover td{background:rgba(108,124,255,.06);}
     <h2>Price Tracker</h2>
     <p id="pt-intro" style="color:var(--muted);font-size:12px;margin:-4px 0 12px">Unit-price trends. Click a row to expand purchase history.</p>
     <div class="controls">
-      <input type="text" id="pt-search" placeholder="Search article or description…" oninput="filterPT()">
-      <select id="pt-sup-filter" onchange="filterPT()"><option value="">All Suppliers</option></select>
-      <select id="pt-cat-filter" onchange="filterPT()"><option value="">All Categories</option></select>
-      <select id="pt-min-app" onchange="filterPT()">
+      <input type="text" id="pt-search" placeholder="Search article or description…" data-input="filterPT">
+      <select id="pt-sup-filter" data-change="filterPT"><option value="">All Suppliers</option></select>
+      <select id="pt-cat-filter" data-change="filterPT"><option value="">All Categories</option></select>
+      <select id="pt-min-app" data-change="filterPT">
         <option value="1">All items</option>
         <option value="2" selected>2+ appearances</option>
         <option value="3">3+ appearances</option>
@@ -404,15 +407,15 @@ tr:hover td{background:rgba(108,124,255,.06);}
     </div>
     <div class="tbl-wrap" style="max-height:none;"><table>
       <thead><tr>
-        <th onclick="sortPT('item_key')">Item ↕</th>
-        <th onclick="sortPT('category')">Category ↕</th>
-        <th onclick="sortPT('supplier')">Supplier ↕</th>
-        <th class="num" onclick="sortPT('appearances')"># ↕</th>
-        <th onclick="sortPT('first_date')">First Date ↕</th>
-        <th onclick="sortPT('latest_date')">Latest Date ↕</th>
-        <th class="num" onclick="sortPT('first_price')">First £ ↕</th>
-        <th class="num" onclick="sortPT('latest_price')">Latest £ ↕</th>
-        <th class="num" onclick="sortPT('drift')">Drift % ↕</th>
+        <th data-click="sortPT" data-arg="item_key">Item ↕</th>
+        <th data-click="sortPT" data-arg="category">Category ↕</th>
+        <th data-click="sortPT" data-arg="supplier">Supplier ↕</th>
+        <th class="num" data-click="sortPT" data-arg="appearances"># ↕</th>
+        <th data-click="sortPT" data-arg="first_date">First Date ↕</th>
+        <th data-click="sortPT" data-arg="latest_date">Latest Date ↕</th>
+        <th class="num" data-click="sortPT" data-arg="first_price">First £ ↕</th>
+        <th class="num" data-click="sortPT" data-arg="latest_price">Latest £ ↕</th>
+        <th class="num" data-click="sortPT" data-arg="drift">Drift % ↕</th>
       </tr></thead>
       <tbody id="pt-body"></tbody>
     </table></div>
@@ -455,20 +458,20 @@ tr:hover td{background:rgba(108,124,255,.06);}
   <div class="card">
     <h2>Full Product Pricing Catalogue</h2>
     <div class="controls">
-      <select id="svc-tier-filter" onchange="renderSvcProducts()"><option value="">All Tiers</option></select>
-      <select id="svc-var-filter" onchange="renderSvcProducts()">
+      <select id="svc-tier-filter" data-change="renderSvcProducts"><option value="">All Tiers</option></select>
+      <select id="svc-var-filter" data-change="renderSvcProducts">
         <option value="">All Products</option>
         <option value="var">Price Variances Only</option>
       </select>
     </div>
     <div class="tbl-wrap"><table>
       <thead><tr>
-        <th onclick="sortSvcProd('article')">Article ↕</th>
-        <th onclick="sortSvcProd('desc')">Description ↕</th>
-        <th onclick="sortSvcProd('tier')">Tier ↕</th>
-        <th class="num" onclick="sortSvcProd('price')">List £/unit ↕</th>
+        <th data-click="sortSvcProd" data-arg="article">Article ↕</th>
+        <th data-click="sortSvcProd" data-arg="desc">Description ↕</th>
+        <th data-click="sortSvcProd" data-arg="tier">Tier ↕</th>
+        <th class="num" data-click="sortSvcProd" data-arg="price">List £/unit ↕</th>
         <th class="num">Net £/unit</th>
-        <th class="num" onclick="sortSvcProd('total')">Gross Total £ ↕</th>
+        <th class="num" data-click="sortSvcProd" data-arg="total">Gross Total £ ↕</th>
         <th>Departments</th>
         <th>Status</th>
       </tr></thead>
@@ -482,10 +485,10 @@ tr:hover td{background:rgba(108,124,255,.06);}
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
       <h2 style="margin:0">📅 Contract Timeline</h2>
       <div style="display:flex;gap:8px;align-items:center">
-        <select id="tl-sup" onchange="renderTimeline()" style="font-size:11px;padding:4px 8px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;display:none">
+        <select id="tl-sup" data-change="renderTimeline" style="font-size:11px;padding:4px 8px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;display:none">
           <option value="">All suppliers</option>
         </select>
-        <button onclick="exportTimelineCsv()" style="font-size:11px;padding:5px 12px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;cursor:pointer">⬇ Export CSV</button>
+        <button data-click="exportTimelineCsv" style="font-size:11px;padding:5px 12px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;cursor:pointer">⬇ Export CSV</button>
       </div>
     </div>
     <!-- Renewal summary KPIs -->
@@ -494,18 +497,18 @@ tr:hover td{background:rgba(108,124,255,.06);}
     <!-- Gantt filters -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;padding:8px 10px;background:var(--surf2);border-radius:6px;border:1px solid var(--border)">
       <span style="font-size:11px;font-weight:600;color:var(--muted)">Gantt filter:</span>
-      <select id="gf-dept"   onchange="renderTimeline()" style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px"><option value="">All departments</option></select>
-      <select id="gf-tier"   onchange="renderTimeline()" style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px"><option value="">All tiers</option></select>
-      <select id="gf-status" onchange="renderTimeline()" style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px">
+      <select id="gf-dept"   data-change="renderTimeline" style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px"><option value="">All departments</option></select>
+      <select id="gf-tier"   data-change="renderTimeline" style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px"><option value="">All tiers</option></select>
+      <select id="gf-status" data-change="renderTimeline" style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px">
         <option value="">All statuses</option>
         <option value="active">Active</option>
         <option value="future">Future</option>
         <option value="expired_renewed">Expired (renewed)</option>
         <option value="expired_lapsed">Expired (lapsed)</option>
       </select>
-      <input id="gf-instr"  oninput="renderTimeline()" placeholder="Instrument…" style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px;width:130px">
-      <input id="gf-serial" oninput="renderTimeline()" placeholder="Serial no…"  style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px;width:100px">
-      <button onclick="clearGanttFilters()" style="font-size:11px;padding:3px 10px;background:var(--surf);border:1px solid var(--border);color:var(--muted);border-radius:4px;cursor:pointer">✕ Clear</button>
+      <input id="gf-instr"  data-input="renderTimeline" placeholder="Instrument…" style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px;width:130px">
+      <input id="gf-serial" data-input="renderTimeline" placeholder="Serial no…"  style="font-size:11px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);color:var(--text);border-radius:4px;width:100px">
+      <button data-click="clearGanttFilters" style="font-size:11px;padding:3px 10px;background:var(--surf);border:1px solid var(--border);color:var(--muted);border-radius:4px;cursor:pointer">✕ Clear</button>
     </div>
 
     <!-- Gantt chart (serial-centric) -->
@@ -518,28 +521,28 @@ tr:hover td{background:rgba(108,124,255,.06);}
       <table id="tl-table">
         <thead>
           <tr>
-            <th onclick="sortTimeline('start')">Start ↕</th>
-            <th onclick="sortTimeline('end')">End ↕</th>
+            <th data-click="sortTimeline" data-arg="start">Start ↕</th>
+            <th data-click="sortTimeline" data-arg="end">End ↕</th>
             <th>Duration</th>
-            <th onclick="sortTimeline('dept')">Department ↕</th>
-            <th onclick="sortTimeline('tier')">Tier ↕</th>
-            <th onclick="sortTimeline('instrument')">Instrument ↕</th>
-            <th onclick="sortTimeline('serial')">Serial No ↕</th>
-            <th class="num" onclick="sortTimeline('total')">Cost (£) ↕</th>
+            <th data-click="sortTimeline" data-arg="dept">Department ↕</th>
+            <th data-click="sortTimeline" data-arg="tier">Tier ↕</th>
+            <th data-click="sortTimeline" data-arg="instrument">Instrument ↕</th>
+            <th data-click="sortTimeline" data-arg="serial">Serial No ↕</th>
+            <th class="num" data-click="sortTimeline" data-arg="total">Cost (£) ↕</th>
             <th>Invoice #</th>
-            <th onclick="sortTimeline('status')">Status ↕</th>
+            <th data-click="sortTimeline" data-arg="status">Status ↕</th>
           </tr>
           <tr id="tl-filter-row" style="background:var(--surf2)">
-            <th><input class="col-filter" id="tlf-start"      placeholder="e.g. 2025" oninput="renderTimeline()"></th>
-            <th><input class="col-filter" id="tlf-end"        placeholder="e.g. 2026" oninput="renderTimeline()"></th>
+            <th><input class="col-filter" id="tlf-start"      placeholder="e.g. 2025" data-input="renderTimeline"></th>
+            <th><input class="col-filter" id="tlf-end"        placeholder="e.g. 2026" data-input="renderTimeline"></th>
             <th></th>
-            <th><select class="col-filter" id="tlf-dept"      onchange="renderTimeline()"><option value="">All</option></select></th>
-            <th><select class="col-filter" id="tlf-tier"      onchange="renderTimeline()"><option value="">All</option></select></th>
-            <th><input class="col-filter" id="tlf-instrument" placeholder="filter…"    oninput="renderTimeline()"></th>
-            <th><input class="col-filter" id="tlf-serial"     placeholder="filter…"    oninput="renderTimeline()"></th>
-            <th><input class="col-filter" id="tlf-cost"       placeholder="min £"  type="number" oninput="renderTimeline()" style="width:80px"></th>
-            <th><input class="col-filter" id="tlf-invoice"    placeholder="filter…"    oninput="renderTimeline()"></th>
-            <th><select class="col-filter" id="tlf-status"    onchange="renderTimeline()">
+            <th><select class="col-filter" id="tlf-dept"      data-change="renderTimeline"><option value="">All</option></select></th>
+            <th><select class="col-filter" id="tlf-tier"      data-change="renderTimeline"><option value="">All</option></select></th>
+            <th><input class="col-filter" id="tlf-instrument" placeholder="filter…"    data-input="renderTimeline"></th>
+            <th><input class="col-filter" id="tlf-serial"     placeholder="filter…"    data-input="renderTimeline"></th>
+            <th><input class="col-filter" id="tlf-cost"       placeholder="min £"  type="number" data-input="renderTimeline" style="width:80px"></th>
+            <th><input class="col-filter" id="tlf-invoice"    placeholder="filter…"    data-input="renderTimeline"></th>
+            <th><select class="col-filter" id="tlf-status"    data-change="renderTimeline">
               <option value="">All</option>
               <option value="active">🟢 Active</option>
               <option value="expired_lapsed">🔴 Needs renewal</option>
@@ -567,7 +570,7 @@ tr:hover td{background:rgba(108,124,255,.06);}
     <div class="card span2">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
         <h2 style="margin:0" id="rg-main-chart-title">Consumable Spend by Supplier</h2>
-        <span id="rg-main-reset" style="display:none;font-size:11px;color:var(--muted);cursor:pointer" onclick="clearRgMainSelect()">✕ Clear filter</span>
+        <span id="rg-main-reset" style="display:none;font-size:11px;color:var(--muted);cursor:pointer" data-click="clearRgMainSelect">✕ Clear filter</span>
       </div>
       <canvas id="c-rg-main" height="180"></canvas>
     </div>
@@ -590,28 +593,28 @@ tr:hover td{background:rgba(108,124,255,.06);}
   <div class="card">
     <h2>Reagent Catalogue</h2>
     <div class="controls" style="gap:8px;flex-wrap:wrap">
-      <input id="rg-search" placeholder="Search article / description / invoice…" oninput="renderRgTable()"
+      <input id="rg-search" placeholder="Search article / description / invoice…" data-input="renderRgTable"
              style="flex:1;min-width:200px;padding:6px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:12px">
-      <select id="rg-sup-filter" onchange="renderRgTable()"
+      <select id="rg-sup-filter" data-change="renderRgTable"
               style="padding:6px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:12px">
         <option value="">All Suppliers</option>
       </select>
-      <select id="rg-dept-filter" onchange="renderRgTable()"
+      <select id="rg-dept-filter" data-change="renderRgTable"
               style="padding:6px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:12px">
         <option value="">All Departments</option>
       </select>
     </div>
     <div class="tbl-wrap" style="margin-top:10px"><table>
       <thead><tr>
-        <th onclick="sortRg('article')">Article ↕</th>
-        <th onclick="sortRg('description')">Description ↕</th>
-        <th onclick="sortRg('supplier_name')">Supplier ↕</th>
-        <th onclick="sortRg('invoice_number')">Invoice ↕</th>
-        <th onclick="sortRg('invoice_date')">Date ↕</th>
-        <th onclick="sortRg('department')">Department ↕</th>
-        <th class="num" onclick="sortRg('quantity')">Qty ↕</th>
-        <th class="num" onclick="sortRg('unit_price')">Unit Price ↕</th>
-        <th class="num" onclick="sortRg('total_price')">Total ↕</th>
+        <th data-click="sortRg" data-arg="article">Article ↕</th>
+        <th data-click="sortRg" data-arg="description">Description ↕</th>
+        <th data-click="sortRg" data-arg="supplier_name">Supplier ↕</th>
+        <th data-click="sortRg" data-arg="invoice_number">Invoice ↕</th>
+        <th data-click="sortRg" data-arg="invoice_date">Date ↕</th>
+        <th data-click="sortRg" data-arg="department">Department ↕</th>
+        <th class="num" data-click="sortRg" data-arg="quantity">Qty ↕</th>
+        <th class="num" data-click="sortRg" data-arg="unit_price">Unit Price ↕</th>
+        <th class="num" data-click="sortRg" data-arg="total_price">Total ↕</th>
       </tr></thead>
       <tbody id="rg-tbody"></tbody>
     </table></div>
@@ -699,20 +702,20 @@ tr:hover td{background:rgba(108,124,255,.06);}
       <div>
         <div class="rpt-sect-label">Model</div>
         <div style="display:flex;flex-wrap:wrap;gap:5px">
-          <div class="rpt-opt rpt-opt-pill rpt-opt-active" id="rpt-model-claude" onclick="rptSetBackend('anthropic')">Claude (Anthropic)</div>
-          <div class="rpt-opt rpt-opt-pill" id="rpt-model-qwen" onclick="rptSetBackend('qwen')">Qwen (local)</div>
+          <div class="rpt-opt rpt-opt-pill rpt-opt-active" id="rpt-model-claude" data-click="rptSetBackend" data-arg="anthropic">Claude (Anthropic)</div>
+          <div class="rpt-opt rpt-opt-pill" id="rpt-model-qwen" data-click="rptSetBackend" data-arg="qwen">Qwen (local)</div>
         </div>
         <div id="rpt-cost-hint" style="font-size:11px;color:var(--muted);margin-top:7px">~$1.20 · 30–90 s</div>
       </div>
 
       <!-- Generate button -->
-      <button id="rpt-gen-btn" onclick="generateReportV2()" style="font-size:12px;padding:10px 14px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;text-align:left;line-height:1.4">Generate<br><span id="rpt-gen-label" style="font-size:13px">📊 Commercial Intelligence</span></button>
+      <button id="rpt-gen-btn" data-click="generateReportV2" style="font-size:12px;padding:10px 14px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;text-align:left;line-height:1.4">Generate<br><span id="rpt-gen-label" style="font-size:13px">📊 Commercial Intelligence</span></button>
 
       <!-- Status bar -->
       <div id="rpt-status" style="display:none;padding:12px 14px;background:var(--surf2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted);align-items:center;gap:10px">
         <div style="width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0"></div>
         <span id="rpt-status-text" style="flex:1">Generating…</span>
-        <button onclick="cancelReport()" style="font-size:11px;padding:4px 10px;background:#e53;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;flex-shrink:0">Cancel</button>
+        <button data-click="cancelReport" style="font-size:11px;padding:4px 10px;background:#e53;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;flex-shrink:0">Cancel</button>
       </div>
 
       <!-- Error panel (persists until dismissed) -->
@@ -745,7 +748,7 @@ tr:hover td{background:rgba(108,124,255,.06);}
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
             <a id="rpt-viewer-link" href="#" target="_blank" rel="noopener" style="font-size:12px;padding:6px 14px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;text-decoration:none;white-space:nowrap">Open full-screen ↗</a>
-            <button onclick="rptCloseViewer()" title="Close preview" style="font-size:16px;padding:4px 10px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:6px;cursor:pointer;line-height:1">✕</button>
+            <button data-click="rptCloseViewer" title="Close preview" style="font-size:16px;padding:4px 10px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:6px;cursor:pointer;line-height:1">✕</button>
           </div>
         </div>
         <iframe id="rpt-iframe" src="" style="width:100%;height:860px;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>
@@ -834,7 +837,7 @@ function applyGlobalSupFilter(){
 
 // ── Drill-down from Overview charts ──────────────────────────────────────────
 function _tabOn(k){return !window.EPIPROC_TABS||window.EPIPROC_TABS.indexOf(k)>=0;}
-function _goTab(k){if(!_tabOn(k))return;var el=document.querySelector('nav .tab[onclick*="showPage(\''+k+'\'"]');if(el&&el.offsetParent!==null)el.click();}
+function _goTab(k){if(!_tabOn(k))return;var el=document.querySelector('nav .tab[data-page="'+k+'"]');if(el&&el.offsetParent!==null)el.click();}
 function _drillSup(name){var g=document.getElementById('global-sup');if(g){g.value=name;applyGlobalSupFilter();}_goTab('suppliers');}
 function _sankeyDrill(d){
   if(d.side==='src'){ _tabOn('departments') ? buildSankey({type:'sup',name:d.name}) : _drillSup(d.name); }
@@ -886,18 +889,64 @@ function gbp2(v){if(v==null)return'—';return'£'+v.toLocaleString('en-GB',{min
 const _ESC_MAP={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return _ESC_MAP[c];});}
 
+// ── Event delegation (CSP-safe: no inline on* handlers) ──────────────────────
+// Under the nonce CSP the browser blocks inline event-handler attributes, so
+// every interactive element carries data-click / data-change / data-input =
+// "action" plus typed data-* args. One delegated listener per event type
+// dispatches to the registry below — and because it is delegation it also covers
+// rows inserted later via innerHTML. Every target is a global function (top-level
+// or window.*), so these resolve at event time regardless of definition order.
+(function(){
+  function a(el){return el.getAttribute('data-arg');}
+  var R={
+    showPage:      function(el){showPage(el.getAttribute('data-page'),el);var f=el.getAttribute('data-init');if(f&&window[f])window[f]();},
+    applyGlobalSupFilter:function(){applyGlobalSupFilter();},
+    sortInv:function(el){sortInv(a(el));}, sortItems:function(el){sortItems(a(el));},
+    sortPT:function(el){sortPT(a(el));}, sortRg:function(el){sortRg(a(el));},
+    sortTimeline:function(el){sortTimeline(a(el));}, sortSvcProd:function(el){sortSvcProd(a(el));},
+    filterInvoices:function(){filterInvoices();}, filterItems:function(){filterItems();},
+    filterPT:function(){filterPT();}, renderTimeline:function(){renderTimeline();},
+    renderTopItems:function(){renderTopItems();}, renderSvcProducts:function(){renderSvcProducts();},
+    renderRgTable:function(){renderRgTable();}, switchInvView:function(){switchInvView();},
+    openSearch:function(){openSearch();}, closeSearch:function(){closeSearch();},
+    closeThumb:function(){closeThumb();},
+    modalCloseSearch:function(el,e){if(e.target===el)closeSearch();},
+    modalCloseThumb:function(el,e){if(e.target===el)closeThumb();},
+    openThumb:function(el){openThumbByKey(el.getAttribute('data-sup'),+el.getAttribute('data-inv'));},
+    openThumbSearch:function(el){openThumbByKey(el.getAttribute('data-sup'),+el.getAttribute('data-inv'));closeSearch();},
+    openTl:function(el){openTlInvoice(el.getAttribute('data-inv'),el.getAttribute('data-sup'));},
+    togglePT:function(el){togglePTDetail(el.getAttribute('data-gk'));},
+    generateReportV2:function(){generateReportV2();}, exportTimelineCsv:function(){exportTimelineCsv();},
+    downloadSearchCSV:function(){downloadSearchCSV();}, cancelReport:function(){cancelReport();},
+    clearRgMainSelect:function(){clearRgMainSelect();}, clearGanttFilters:function(){clearGanttFilters();},
+    buildSankeyReset:function(){buildSankey(null);},
+    rptSetTheme:function(el){rptSetTheme(a(el));}, rptSetScope:function(el){rptSetScope(a(el));},
+    rptSetFocus:function(el){rptSetFocus(a(el));}, rptSetBackend:function(el){rptSetBackend(a(el));},
+    rptCloseViewer:function(){rptCloseViewer();},
+    rptOpen:function(el){rptOpenArchive(el.getAttribute('data-fn'));},
+    rptDelete:function(el){deleteReport(el.getAttribute('data-fn'),el);},
+    pagerGo:function(el){var f=el.getAttribute('data-fn');if(window[f])window[f](+el.getAttribute('data-page'));},
+    rgPrev:function(){window._rgPage=window._rgPage-1;renderRgTable();},
+    rgNext:function(){window._rgPage=window._rgPage+1;renderRgTable();}
+  };
+  function go(attr,e){var el=e.target.closest('['+attr+']');if(!el)return;var f=R[el.getAttribute(attr)];if(f)f(el,e);}
+  document.addEventListener('click', function(e){go('data-click',e);});
+  document.addEventListener('change',function(e){go('data-change',e);});
+  document.addEventListener('input', function(e){go('data-input',e);});
+})();
+
 function renderPager(id,total,ps,cur,cb){
   const pages=Math.ceil(total/ps);
   const el=document.getElementById(id);
   if(pages<=1){el.innerHTML=`<span>${total} records</span>`;return;}
   let h=`<span>${total} records</span>`;
-  h+=`<button onclick="${cb}(${cur-1})" ${cur===1?'disabled':''}>‹</button>`;
+  h+=`<button data-click="pagerGo" data-fn="${cb}" data-page="${cur-1}" ${cur===1?'disabled':''}>‹</button>`;
   for(let i=1;i<=pages;i++){
     if(i===1||i===pages||Math.abs(i-cur)<=1)
-      h+=`<button class="${i===cur?'active':''}" onclick="${cb}(${i})">${i}</button>`;
+      h+=`<button class="${i===cur?'active':''}" data-click="pagerGo" data-fn="${cb}" data-page="${i}">${i}</button>`;
     else if(Math.abs(i-cur)===2) h+='<span>…</span>';
   }
-  h+=`<button onclick="${cb}(${cur+1})" ${cur===pages?'disabled':''}>›</button>`;
+  h+=`<button data-click="pagerGo" data-fn="${cb}" data-page="${cur+1}" ${cur===pages?'disabled':''}>›</button>`;
   el.innerHTML=h;
 }
 
@@ -1056,7 +1105,7 @@ function buildSankey(filter) {
   if (f) {
     const bar = document.createElement('div');
     bar.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;color:var(--muted)';
-    bar.innerHTML = '<button onclick="buildSankey(null)" style="font-size:11px;padding:2px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:4px;cursor:pointer">← Back</button>'
+    bar.innerHTML = '<button data-click="buildSankeyReset" style="font-size:11px;padding:2px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:4px;cursor:pointer">← Back</button>'
                   + '<span>' + breadcrumb + '</span>';
     el.appendChild(bar);
   }
@@ -1589,13 +1638,12 @@ function renderPTTable(page){
     const _unrel=g.appearances<2||g.mixed;
     const driftCol=_unrel?'var(--muted)':g.drift>10?'#ff6b6b':g.drift<-10?'#56cf8e':'var(--muted)';
     const driftTxt=_unrel?'—':(g.drift>0?'+':'')+g.drift.toFixed(1)+'%';
-    const gkEsc=gk.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     const descShort=g.description.length>70?g.description.slice(0,70)+'…':g.description;
     const itemCell=g.article
       ? `<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(g.article)}</div>
          <div style="font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(g.description)}">${esc(descShort)}</div>`
       : `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(g.description)}">${esc(descShort)}</div>`;
-    html+=`<tr class="pt-row${isOpen?' pt-open':''}" onclick="togglePTDetail('${gkEsc}')">
+    html+=`<tr class="pt-row${isOpen?' pt-open':''}" data-click="togglePT" data-gk="${esc(gk)}">
       <td style="max-width:280px;overflow:hidden">${itemCell}</td>
       <td>${esc(g.category)}</td>
       <td style="color:${g.supplier_color}">${esc(g.supplier)}</td>
@@ -1615,7 +1663,7 @@ function renderPTTable(page){
         return`<tr style="border-bottom:1px solid var(--border)">
           <td style="padding:4px 8px">${o.date||'—'}</td>
           <td style="padding:4px 8px">
-            ${o.invoice?`<a onclick="openThumbByKey('${o.supplier_key}',${o.invoice_id})" style="color:var(--accent);cursor:pointer">${esc(o.invoice)}</a>`:'—'}
+            ${o.invoice?`<a data-click="openThumb" data-sup="${esc(o.supplier_key)}" data-inv="${o.invoice_id}" style="color:var(--accent);cursor:pointer">${esc(o.invoice)}</a>`:'—'}
           </td>
           <td style="padding:4px 8px;color:var(--muted)">${esc(o.department||'—')}</td>
           <td style="text-align:right;padding:4px 8px">${o.qty!=null?o.qty:'—'}</td>
@@ -1760,7 +1808,7 @@ function renderInvoices(){
     const da=inv.discount_amount;
     const dp=(sub&&da&&sub>0)?(da/sub*100).toFixed(1)+'%':'—';
     const discCol=(da&&da>0)?'color:#ff6b6b':'';
-    return `<tr style="cursor:pointer" onclick="openThumbByKey('${inv.supplier}',${inv.id})" title="Click to preview ${esc(inv.filename)}">
+    return `<tr style="cursor:pointer" data-click="openThumb" data-sup="${esc(inv.supplier)}" data-inv="${inv.id}" title="Click to preview ${esc(inv.filename)}">
       <td>${inv.invoice_date||'—'}</td>
       <td><span class="cbadge" style="background:${sc}22;color:${sc};font-size:9px">${esc(inv.supplier_name)}</span></td>
       <td>${esc(inv.invoice_number||'—')}</td>
@@ -1831,7 +1879,7 @@ function renderItems(){
       <td class="num">${it.quantity!=null?it.quantity:'—'}</td>
       <td class="num">${it.unit_price!=null?gbp2(it.unit_price):'—'}</td>
       <td class="num">${it.total_price!=null?gbp2(it.total_price):'—'}</td>
-      <td>${it.invoice_number ? `<a onclick="openThumbByKey('${it.supplier}',${it.invoice_id})" style="color:var(--accent);text-decoration:none;cursor:pointer">${esc(it.invoice_number)}</a>` : '—'}</td>
+      <td>${it.invoice_number ? `<a data-click="openThumb" data-sup="${esc(it.supplier)}" data-inv="${it.invoice_id}" style="color:var(--accent);text-decoration:none;cursor:pointer">${esc(it.invoice_number)}</a>` : '—'}</td>
       <td style="color:var(--muted);font-size:11px;max-width:280px;white-space:normal">${esc(it.comment||'')}</td>
     </tr>`;
   }).join('');
@@ -2329,9 +2377,9 @@ function renderSvcSection(){
           const tierLabel=c.tier!=='—'?c.tier:'';
           const inferTag=c.inferred?' (dates inferred)':'';
           const tip=`${row.instr}${row.serial!=='—'?' · S/N '+row.serial:''}\n${c.dept}\n${tierLabel?tierLabel+'\n':''}${c.start} → ${c.end}${inferTag}\n${gbp(c.total)}\n${sc.label}`;
-          const barClick=`openTlInvoice('${(c.invoice||'').replace(/'/g,"\\'")}','${(c.supplier||'').replace(/'/g,"\\'")}')`;
+          const barClick=`data-click="openTl" data-inv="${esc(c.invoice||'')}" data-sup="${esc(c.supplier||'')}"`;
           const infSty=c.inferred?'border-style:dashed;opacity:0.7':'';
-          bars+=`<div onclick="${barClick}" style="position:absolute;left:${left}%;width:${width}%;background:${sc.color}bb;border:1px solid ${sc.color};border-radius:3px;height:100%;min-width:4px;cursor:pointer;${infSty}" title="${esc(tip)}">
+          bars+=`<div ${barClick} style="position:absolute;left:${left}%;width:${width}%;background:${sc.color}bb;border:1px solid ${sc.color};border-radius:3px;height:100%;min-width:4px;cursor:pointer;${infSty}" title="${esc(tip)}">
             <span style="font-size:9px;color:#fff;padding:0 4px;white-space:nowrap;overflow:hidden;display:block;line-height:18px;text-shadow:0 0 3px #000;pointer-events:none">${esc(tierLabel)}</span>
           </div>`;
         });
@@ -2359,7 +2407,7 @@ function renderSvcSection(){
         const deptCol=deptColorMap[c.dept]||'#6c7cff';
         const tierCol=TIER_PAL[c.tier]||'#aaa';
         const sc=STATUS_CFG[c.status]||{label:c.status,color:'#aaa',bg:'#aaa22'};
-        const invLink=`<a onclick="openTlInvoice('${(c.invoice||'').replace(/'/g,"\\'")}','${(c.supplier||'').replace(/'/g,"\\'")}')" style="color:var(--accent);cursor:pointer;font-family:monospace;font-size:11px">${esc(c.invoice||'—')}</a>`;
+        const invLink=`<a data-click="openTl" data-inv="${esc(c.invoice||'')}" data-sup="${esc(c.supplier||'')}" style="color:var(--accent);cursor:pointer;font-family:monospace;font-size:11px">${esc(c.invoice||'—')}</a>`;
         let chainRow='';
         if(c.chain_id&&c.chain_pos>1&&seenChains.has(c.chain_id)){
           const gap=c.gap_days;
@@ -2533,8 +2581,7 @@ renderSvcSection();
     if (!hits.length) { setResults('<div class="sr-empty">No results found.</div>'); return; }
     setResults(hits.map(function(h) {
       const supLabel = h.supplier.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
-      const onclick  = 'openThumbByKey(' + JSON.stringify(h.supplier) + ',' + h.invoice_id + ');closeSearch();';
-      return '<div class="sr-hit" onclick="'+onclick+'">'
+      return '<div class="sr-hit" data-click="openThumbSearch" data-sup="'+esc(h.supplier)+'" data-inv="'+h.invoice_id+'">'
         + '<div class="sr-top">'
         +   '<span class="sr-desc">'+esc(h.description || '')+'</span>'
         +   '<span class="sr-amount">'+fmt(h.total_price)+'</span>'
@@ -2692,7 +2739,7 @@ renderSvcSection();
     if(!el)return;
     el.innerHTML=Object.keys(THEMES).map(function(k){
       const t=THEMES[k], active=k===_theme;
-      return '<div class="rpt-opt'+(active?' rpt-opt-active':'')+'" onclick="rptSetTheme(\''+k+'\')" title="'+esc(t.desc)+'">'
+      return '<div class="rpt-opt'+(active?' rpt-opt-active':'')+'" data-click="rptSetTheme" data-arg="'+esc(k)+'" title="'+esc(t.desc)+'">'
         +'<span style="font-size:14px;flex-shrink:0">'+t.icon+'</span>'
         +'<span style="font-size:12px">'+esc(t.label)+'</span>'
         +'</div>';
@@ -2707,7 +2754,7 @@ renderSvcSection();
     if(!t.scopes.includes(_scope)){_scope=t.scopes[0];}
     el.innerHTML=t.scopes.map(function(s){
       const active=s===_scope;
-      return '<div class="rpt-opt rpt-opt-pill'+(active?' rpt-opt-active':'')+'" onclick="rptSetScope(\''+s+'\')">'+esc(SCOPE_LBL[s])+'</div>';
+      return '<div class="rpt-opt rpt-opt-pill'+(active?' rpt-opt-active':'')+'" data-click="rptSetScope" data-arg="'+esc(s)+'">'+esc(SCOPE_LBL[s])+'</div>';
     }).join('');
     const sw=document.getElementById('rpt-sup-wrap');
     const dw=document.getElementById('rpt-dept-wrap');
@@ -2724,7 +2771,7 @@ renderSvcSection();
     if(!focuses.includes(_focus)) _focus=focuses[0];
     el.innerHTML=focuses.map(function(f){
       const active=f===_focus;
-      return '<div class="rpt-opt rpt-opt-pill'+(active?' rpt-opt-active':'')+'" onclick="rptSetFocus(\''+f+'\')">'+esc(FOCUS_LABEL[f]||f)+'</div>';
+      return '<div class="rpt-opt rpt-opt-pill'+(active?' rpt-opt-active':'')+'" data-click="rptSetFocus" data-arg="'+esc(f)+'">'+esc(FOCUS_LABEL[f]||f)+'</div>';
     }).join('');
   }
 
@@ -2798,13 +2845,13 @@ renderSvcSection();
       var scope=r.scope?' · '+r.scope:'';
       var title=r.title||r.display_name||r.filename;
       var fn=JSON.stringify(r.filename);
-      return '<div style="border:1px solid var(--border);border-radius:8px;padding:12px 14px;background:var(--surf);display:flex;flex-direction:column;gap:8px;transition:border-color .12s" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--border)\'">'
+      return '<div class="rpt-card" style="border:1px solid var(--border);border-radius:8px;padding:12px 14px;background:var(--surf);display:flex;flex-direction:column;gap:8px;transition:border-color .12s">'
         +'<div style="font-size:10px;color:var(--muted)">'+esc(th.icon+' '+th.label+scope)+'</div>'
         +'<div style="font-size:12px;font-weight:600;color:var(--text);line-height:1.35;flex:1">'+esc(title.length>60?title.slice(0,60)+'…':title)+'</div>'
         +'<div style="font-size:10px;color:var(--muted);font-family:monospace">'+esc(date+cost)+'</div>'
         +'<div style="display:flex;gap:6px">'
-        +"<button onclick='rptOpenArchive("+fn+")' style=\"flex:1;font-size:11px;padding:5px 0;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600\">Open</button>"
-        +"<button onclick='deleteReport("+fn+",this)' style=\"font-size:11px;padding:5px 9px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:6px;cursor:pointer\" title='Delete' onmouseover=\"this.style.background='#ff6b6b22';this.style.color='#ff6b6b'\" onmouseout=\"this.style.background='transparent';this.style.color='var(--muted)'\">&#x2715;</button>"
+        +'<button data-click="rptOpen" data-fn="'+esc(r.filename)+'" style="flex:1;font-size:11px;padding:5px 0;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">Open</button>'
+        +'<button data-click="rptDelete" data-fn="'+esc(r.filename)+'" class="rpt-del" style="font-size:11px;padding:5px 9px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:6px;cursor:pointer" title="Delete">&#x2715;</button>'
         +'</div>'
         +'</div>';
     }).join('');
@@ -3180,7 +3227,7 @@ renderSvcSection();
     const sc = it => it.supplier_color || '#aaa';
     document.getElementById('rg-tbody').innerHTML = slice.map(r => {
       const invCell = r.invoice_id != null
-        ? `<a onclick="openThumbByKey('${r.supplier}',${r.invoice_id})" style="color:var(--accent);text-decoration:none;cursor:pointer;font-family:monospace;font-size:11px" title="Open PDF">${esc(r.invoice_number||r.filename||'—')} 📄</a>`
+        ? `<a data-click="openThumb" data-sup="${esc(r.supplier)}" data-inv="${r.invoice_id}" style="color:var(--accent);text-decoration:none;cursor:pointer;font-family:monospace;font-size:11px" title="Open PDF">${esc(r.invoice_number||r.filename||'—')} 📄</a>`
         : `<span style="font-family:monospace;font-size:11px">${esc(r.invoice_number||r.filename||'—')}</span>`;
       return `<tr>
         <td style="font-family:monospace;font-size:11px">${esc(r.article||'—')}</td>
@@ -3196,9 +3243,9 @@ renderSvcSection();
     }).join('') || '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">No consumable lines match.</td></tr>';
     document.getElementById('rg-pager').innerHTML = pages <= 1 ? `<span>${total} lines</span>` :
       `<span>${total} lines</span>` +
-      (_rgPage > 0 ? `<button onclick="_rgPage--;window.renderRgTable()">‹ Prev</button>` : '') +
+      (_rgPage > 0 ? `<button data-click="rgPrev">‹ Prev</button>` : '') +
       `<span>Page ${_rgPage+1} / ${pages}</span>` +
-      (_rgPage < pages-1 ? `<button onclick="_rgPage++;window.renderRgTable()">Next ›</button>` : '');
+      (_rgPage < pages-1 ? `<button data-click="rgNext">Next ›</button>` : '');
   };
 
   window.initReagents = function() {
@@ -3224,13 +3271,13 @@ renderSvcSection();
 </script>
 
 <!-- Invoice thumbnail modal -->
-<div id="thumb-overlay" onclick="if(event.target===this)closeThumb()">
+<div id="thumb-overlay" data-click="modalCloseThumb">
   <div id="thumb-panel">
     <div id="thumb-header">
       <h3 id="thumb-title">Invoice</h3>
       <span id="thumb-meta"></span>
       <a id="thumb-pdf-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:11px;padding:4px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--muted);border-radius:5px;text-decoration:none;white-space:nowrap">↗ Open PDF</a>
-      <button id="thumb-close" onclick="closeThumb()">✕</button>
+      <button id="thumb-close" data-click="closeThumb">✕</button>
     </div>
     <div id="thumb-body">
       <div id="thumb-noimg" style="display:none">No preview available for this invoice.</div>

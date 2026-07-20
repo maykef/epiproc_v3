@@ -178,27 +178,49 @@ RATE_DEFAULT = "120/minute"
 # Security headers middleware
 # ─────────────────────────────────────────────────────────────────────────────
 
-_SECURITY_HEADERS = {
+_STATIC_SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "SAMEORIGIN",
-    "Content-Security-Policy": (
-        "default-src 'self'; "
-        "script-src 'self' cdn.jsdelivr.net 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data:; "
-        "font-src 'self' cdn.jsdelivr.net; "
-        "frame-ancestors 'self'"
-    ),
     "Referrer-Policy": "strict-origin-when-cross-origin",
 }
 
 
+def _csp(nonce: str) -> str:
+    """Content-Security-Policy for this response.
+
+    'unsafe-inline' is gone from script-src: every inline <script> now carries
+    this per-request nonce, and the dashboard's inline event handlers were
+    migrated to delegated listeners — so a VLM string injected into the DOM can
+    no longer execute even if an escaping gap were ever reintroduced. style-src
+    keeps 'unsafe-inline' (inline style="" attributes are pervasive and are not a
+    script-execution vector). object-src/base-uri/form-action are locked down as
+    additional hardening (no plugins, no <base> hijack of relative script URLs,
+    forms may only post same-origin).
+    """
+    return (
+        "default-src 'self'; "
+        f"script-src 'self' cdn.jsdelivr.net 'nonce-{nonce}'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self' cdn.jsdelivr.net; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'self'"
+    )
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # Generate the nonce BEFORE the route runs so the page builder can stamp
+        # it onto every inline <script>; the matching CSP header is set below.
+        nonce = secrets.token_urlsafe(16)
+        request.state.csp_nonce = nonce
         response = await call_next(request)
-        for header, value in _SECURITY_HEADERS.items():
+        for header, value in _STATIC_SECURITY_HEADERS.items():
             response.headers[header] = value
+        response.headers["Content-Security-Policy"] = _csp(nonce)
         return response
 
 

@@ -11,13 +11,18 @@ from __future__ import annotations
 import json
 
 
-def csrf_inject_html(token: str) -> str:
+def csrf_inject_html(token: str, nonce: str = "") -> str:
     if not token:
         return ""
     t = json.dumps(token)
+    # nonce is required on Jinja-rendered pages (their <script> is emitted here and
+    # is not post-processed). On the string-built dashboard the nonce is stamped
+    # onto every bare <script> after assembly, so it passes nonce="" and this emits
+    # a bare <script> that the later replace picks up.
+    n = f' nonce="{nonce}"' if nonce else ''
     return (
         f'<meta name="csrf-token" content="{token}">'
-        f'<script>(function(){{var t={t};'
+        f'<script{n}>(function(){{var t={t};'
         f'var _f=window.fetch;window.fetch=function(url,o){{o=o||{{}};'
         f"var m=(o.method||'GET').toUpperCase();"
         f"if(m==='GET'||m==='HEAD'||m==='OPTIONS')return _f(url,o);"

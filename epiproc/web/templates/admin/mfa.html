@@ -9,7 +9,7 @@
     Revoking MFA will require the user to re-enroll before they can enable it again.</p>
   <form class="inline" method="post" action="/admin/users/{{ target.id }}/mfa/revoke">
     <button class="btn btn-danger" type="submit"
-            onclick="return confirm('Remove MFA for {{ target.username }}?')">
+            data-confirm="Remove MFA for {{ target.username }}?">
       Remove MFA
     </button>
   </form>
