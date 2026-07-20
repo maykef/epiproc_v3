@@ -786,7 +786,7 @@ function populateSearchSuppliers(){
   if(!sel) return;
   const keys=(typeof SUP_KEYS!=='undefined'&&SUP_KEYS.length)?SUP_KEYS:SUP_NAMES;
   sel.innerHTML='<option value="">All suppliers</option>'+
-    keys.map((k,i)=>`<option value="${k}">${SUP_NAMES[i]||k}</option>`).join('');
+    keys.map((k,i)=>`<option value="${esc(k)}">${esc(SUP_NAMES[i]||k)}</option>`).join('');
 }
 populateSearchSuppliers();
 
@@ -875,6 +875,16 @@ function switchInvView(){
 // ── Formatters ─────────────────────────────────────────────────────────────
 function gbp(v){if(v==null)return'—';return'£'+v.toLocaleString('en-GB',{minimumFractionDigits:0,maximumFractionDigits:0});}
 function gbp2(v){if(v==null)return'—';return'£'+v.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2});}
+
+// HTML-escape any VLM-extracted string (line-item descriptions, seller names,
+// article codes, categories, invoice numbers, …) before it is interpolated into
+// an innerHTML string or an HTML attribute. json.dumps/_js_json only stops the
+// <script> block from being broken out of; once the JSON is parsed the values
+// hold their original characters, so every innerHTML/attribute insertion is a
+// DOM-XSS sink unless escaped here. Safe for text and for single/double-quoted
+// attribute values (escapes & < > " ').
+const _ESC_MAP={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return _ESC_MAP[c];});}
 
 function renderPager(id,total,ps,cur,cb){
   const pages=Math.ceil(total/ps);
@@ -1379,7 +1389,7 @@ function buildCatTable(){
   document.getElementById('cat-table').innerHTML=sorted.map(([cat,v])=>{
     const pct=grand>0?(v.total/grand*100).toFixed(1):'0.0';
     const col=CAT_COLOR[cat]||'#aaa';
-    return `<tr><td><span class="cbadge" style="background:${col}22;color:${col}">${cat}</span></td>
+    return `<tr><td><span class="cbadge" style="background:${col}22;color:${col}">${esc(cat)}</span></td>
       <td class="num">${v.count}</td><td class="num">${gbp(v.total)}</td>
       <td class="num" style="color:${col}">${pct}%</td></tr>`;
   }).join('');
@@ -1416,11 +1426,11 @@ function renderTopItems(){
     const desc=(it.description||it.article||'—').slice(0,55);
     const catLabel=it.category==='Uncategorised'?'⚠ Needs verification':it.category;
     return `<tr>
-      <td><span class="cbadge" style="background:${scol}22;color:${scol};font-size:9px">${it.supplier_name}</span></td>
-      <td><span class="cbadge" style="background:${col}22;color:${col};font-size:9px">${catLabel}</span></td>
-      <td>${it.department}</td>
-      <td title="${it.description||''}">${desc}${(it.description||'').length>55?'…':''}</td>
-      <td>${it.article||'—'}</td>
+      <td><span class="cbadge" style="background:${scol}22;color:${scol};font-size:9px">${esc(it.supplier_name)}</span></td>
+      <td><span class="cbadge" style="background:${col}22;color:${col};font-size:9px">${esc(catLabel)}</span></td>
+      <td>${esc(it.department)}</td>
+      <td title="${esc(it.description||'')}">${esc(desc)}${(it.description||'').length>55?'…':''}</td>
+      <td>${esc(it.article||'—')}</td>
       <td class="num">${it.quantity!=null?it.quantity:'—'}</td>
       <td class="num">${it.unit_price!=null?gbp2(it.unit_price):'—'}</td>
       <td class="num">${gbp2(it.total_price)}</td>
@@ -1438,7 +1448,7 @@ function buildDeptCharts(){
   const sorted=Object.entries(deptMap).sort((a,b)=>b[1].total-a[1].total);
 
   document.getElementById('dept-table').innerHTML=sorted.map(([dept,v],di)=>`
-    <tr><td style="color:${DEPT_PAL[di]||'#aaa'}">${dept}</td>
+    <tr><td style="color:${DEPT_PAL[di]||'#aaa'}">${esc(dept)}</td>
     <td class="num">${v.count}</td><td class="num">${gbp(v.total)}</td></tr>`).join('');
 }
 
@@ -1462,13 +1472,13 @@ function buildMatrix(){
   function hc(v){if(!v)return'';const t=Math.min(v/maxVal,1);return`background:rgba(108,124,255,${(0.1+t*0.75).toFixed(2)})`;}
 
   let html='<thead><tr><th style="text-align:left;font-size:10px;color:var(--muted)">Department</th>';
-  activeCats.forEach(c=>{html+=`<th style="font-size:9px;color:${CAT_COLOR[c]||'#aaa'};writing-mode:vertical-lr;padding:6px 4px;min-width:28px">${c}</th>`;});
+  activeCats.forEach(c=>{html+=`<th style="font-size:9px;color:${CAT_COLOR[c]||'#aaa'};writing-mode:vertical-lr;padding:6px 4px;min-width:28px">${esc(c)}</th>`;});
   html+='<th>Total</th></tr></thead><tbody>';
   deptsSorted.forEach((dep,di)=>{
     let rowTotal=0,cells='';
     activeCats.forEach(cat=>{const v=cdMap[cat+'|||'+dep]||0;rowTotal+=v;
       cells+=`<td style="${hc(v)}" class="${v?'':'zero'}">${v?gbp(v):'—'}</td>`;});
-    html+=`<tr><td style="color:${DEPT_PAL[di]||'#aaa'};font-weight:600;white-space:nowrap">${dep}</td>${cells}<td style="font-weight:700">${gbp(rowTotal)}</td></tr>`;
+    html+=`<tr><td style="color:${DEPT_PAL[di]||'#aaa'};font-weight:600;white-space:nowrap">${esc(dep)}</td>${cells}<td style="font-weight:700">${gbp(rowTotal)}</td></tr>`;
   });
   html+='</tbody>';
   document.getElementById('matrix-table').innerHTML=html;
@@ -1579,16 +1589,16 @@ function renderPTTable(page){
     const _unrel=g.appearances<2||g.mixed;
     const driftCol=_unrel?'var(--muted)':g.drift>10?'#ff6b6b':g.drift<-10?'#56cf8e':'var(--muted)';
     const driftTxt=_unrel?'—':(g.drift>0?'+':'')+g.drift.toFixed(1)+'%';
-    const esc=gk.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const gkEsc=gk.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     const descShort=g.description.length>70?g.description.slice(0,70)+'…':g.description;
     const itemCell=g.article
-      ? `<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.article}</div>
-         <div style="font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${g.description}">${descShort}</div>`
-      : `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${g.description}">${descShort}</div>`;
-    html+=`<tr class="pt-row${isOpen?' pt-open':''}" onclick="togglePTDetail('${esc}')">
+      ? `<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(g.article)}</div>
+         <div style="font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(g.description)}">${esc(descShort)}</div>`
+      : `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(g.description)}">${esc(descShort)}</div>`;
+    html+=`<tr class="pt-row${isOpen?' pt-open':''}" onclick="togglePTDetail('${gkEsc}')">
       <td style="max-width:280px;overflow:hidden">${itemCell}</td>
-      <td>${g.category}</td>
-      <td style="color:${g.supplier_color}">${g.supplier}</td>
+      <td>${esc(g.category)}</td>
+      <td style="color:${g.supplier_color}">${esc(g.supplier)}</td>
       <td class="num">${g.appearances}</td>
       <td>${g.first_date||'—'}</td>
       <td>${g.latest_date||'—'}</td>
@@ -1605,9 +1615,9 @@ function renderPTTable(page){
         return`<tr style="border-bottom:1px solid var(--border)">
           <td style="padding:4px 8px">${o.date||'—'}</td>
           <td style="padding:4px 8px">
-            ${o.invoice?`<a onclick="openThumbByKey('${o.supplier_key}',${o.invoice_id})" style="color:var(--accent);cursor:pointer">${o.invoice}</a>`:'—'}
+            ${o.invoice?`<a onclick="openThumbByKey('${o.supplier_key}',${o.invoice_id})" style="color:var(--accent);cursor:pointer">${esc(o.invoice)}</a>`:'—'}
           </td>
-          <td style="padding:4px 8px;color:var(--muted)">${o.department||'—'}</td>
+          <td style="padding:4px 8px;color:var(--muted)">${esc(o.department||'—')}</td>
           <td style="text-align:right;padding:4px 8px">${o.qty!=null?o.qty:'—'}</td>
           <td style="text-align:right;padding:4px 8px;font-weight:600">${gbp2(o.unit_price)}</td>
           <td style="text-align:right;padding:4px 8px">${o.total_price!=null?gbp2(o.total_price):'—'}</td>
@@ -1617,8 +1627,8 @@ function renderPTTable(page){
       html+=`<tr class="pt-detail-row"><td colspan="9" style="padding:0;background:var(--bg)">
         <div style="padding:10px 16px 14px">
           <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
-            ${g.article?'<strong>Article:</strong> '+g.article+' &nbsp;·&nbsp; ':''}
-            <strong>Description:</strong> ${g.description}
+            ${g.article?'<strong>Article:</strong> '+esc(g.article)+' &nbsp;·&nbsp; ':''}
+            <strong>Description:</strong> ${esc(g.description)}
           </div>
           <table style="width:100%;font-size:12px;border-collapse:collapse">
             <thead><tr style="color:var(--muted);border-bottom:1px solid var(--border)">
@@ -1679,7 +1689,7 @@ function _openThumbInv(inv) {
     imgWrap.style.display = '';
     noImg.style.display = 'none';
   } else if (inv.pdf_url) {
-    imgWrap.innerHTML = `<iframe src="${inv.pdf_url}" style="width:100%;height:72vh;min-height:480px;border:none;border-radius:6px"></iframe>`;
+    imgWrap.innerHTML = `<iframe src="${esc(inv.pdf_url)}" style="width:100%;height:72vh;min-height:480px;border:none;border-radius:6px"></iframe>`;
     imgWrap.style.display = '';
     noImg.style.display = 'none';
   } else {
@@ -1695,7 +1705,7 @@ function _openThumbInv(inv) {
     ['File',       inv.filename],
   ];
   document.getElementById('thumb-details').innerHTML =
-    rows.filter(r => r[1]).map(r => `<span><b>${r[0]}:</b> ${r[1]}</span>`).join('');
+    rows.filter(r => r[1]).map(r => `<span><b>${r[0]}:</b> ${esc(r[1])}</span>`).join('');
   document.getElementById('thumb-overlay').classList.add('open');
 }
 
@@ -1739,7 +1749,7 @@ function docBadge(t,sc){
   const m={invoice:'#6c7cff','consolidated invoice':'#4ecdc4','service invoice':'#4ecdc4',
             'contract invoice':'#ff9f43','credit note':'#ff6b6b'};
   const c=m[t]||'#aaa';
-  return `<span class="cbadge" style="background:${c}22;color:${c}">${t||'unknown'}</span>`;
+  return `<span class="cbadge" style="background:${c}22;color:${c}">${esc(t||'unknown')}</span>`;
 }
 
 function renderInvoices(){
@@ -1750,20 +1760,20 @@ function renderInvoices(){
     const da=inv.discount_amount;
     const dp=(sub&&da&&sub>0)?(da/sub*100).toFixed(1)+'%':'—';
     const discCol=(da&&da>0)?'color:#ff6b6b':'';
-    return `<tr style="cursor:pointer" onclick="openThumbByKey('${inv.supplier}',${inv.id})" title="Click to preview ${inv.filename}">
+    return `<tr style="cursor:pointer" onclick="openThumbByKey('${inv.supplier}',${inv.id})" title="Click to preview ${esc(inv.filename)}">
       <td>${inv.invoice_date||'—'}</td>
-      <td><span class="cbadge" style="background:${sc}22;color:${sc};font-size:9px">${inv.supplier_name}</span></td>
-      <td>${inv.invoice_number||'—'}</td>
+      <td><span class="cbadge" style="background:${sc}22;color:${sc};font-size:9px">${esc(inv.supplier_name)}</span></td>
+      <td>${esc(inv.invoice_number||'—')}</td>
       <td>${docBadge(inv.document_type)}</td>
-      <td style="font-weight:600">${inv.department}</td>
-      <td title="${inv.buyer_department||''}">${(inv.buyer_department||'—').slice(0,35)}</td>
+      <td style="font-weight:600">${esc(inv.department)}</td>
+      <td title="${esc(inv.buyer_department||'')}">${esc((inv.buyer_department||'—').slice(0,35))}</td>
       <td class="num">${sub!=null?gbp2(sub):'—'}</td>
       <td class="num" style="${discCol}">${da?gbp2(da):'—'}</td>
       <td class="num" style="${discCol}">${dp}</td>
       <td class="num" style="font-weight:700">${inv.total_amount!=null?gbp2(inv.total_amount):'—'}</td>
-      <td>${inv.currency||'—'}</td>
+      <td>${esc(inv.currency||'—')}</td>
       <td>${inv.extraction_error?'<span class="err">⚠ Error</span>':inv.validation_warning?'<span class="warn">⚠ Warn</span>':'<span class="ok">✓</span>'}</td>
-      <td title="${inv.filename}">${inv.filename}</td>
+      <td title="${esc(inv.filename)}">${esc(inv.filename)}</td>
     </tr>`;
   }).join('');
   renderPager('inv-pager',invFiltered.length,INV_PS,invPage,'goInv');
@@ -1813,16 +1823,16 @@ function renderItems(){
     const catLabel = needsVerif ? '⚠ Needs verification' : it.category;
     return `<tr${needsVerif?' style="background:#ff9f430d"':''}>
       <td>${it.invoice_date||'—'}</td>
-      <td><span class="cbadge" style="background:${sc}22;color:${sc};font-size:9px">${it.supplier_name}</span></td>
-      <td><span class="cbadge" style="background:${col}22;color:${col};font-size:9px">${catLabel}</span></td>
-      <td>${it.department}</td>
-      <td title="${desc}">${desc.slice(0,50)}${desc.length>50?'…':''}</td>
-      <td>${it.article||'—'}</td>
+      <td><span class="cbadge" style="background:${sc}22;color:${sc};font-size:9px">${esc(it.supplier_name)}</span></td>
+      <td><span class="cbadge" style="background:${col}22;color:${col};font-size:9px">${esc(catLabel)}</span></td>
+      <td>${esc(it.department)}</td>
+      <td title="${esc(desc)}">${esc(desc.slice(0,50))}${desc.length>50?'…':''}</td>
+      <td>${esc(it.article||'—')}</td>
       <td class="num">${it.quantity!=null?it.quantity:'—'}</td>
       <td class="num">${it.unit_price!=null?gbp2(it.unit_price):'—'}</td>
       <td class="num">${it.total_price!=null?gbp2(it.total_price):'—'}</td>
-      <td>${it.invoice_number ? `<a onclick="openThumbByKey('${it.supplier}',${it.invoice_id})" style="color:var(--accent);text-decoration:none;cursor:pointer">${it.invoice_number}</a>` : '—'}</td>
-      <td style="color:var(--muted);font-size:11px;max-width:280px;white-space:normal">${it.comment||''}</td>
+      <td>${it.invoice_number ? `<a onclick="openThumbByKey('${it.supplier}',${it.invoice_id})" style="color:var(--accent);text-decoration:none;cursor:pointer">${esc(it.invoice_number)}</a>` : '—'}</td>
+      <td style="color:var(--muted);font-size:11px;max-width:280px;white-space:normal">${esc(it.comment||'')}</td>
     </tr>`;
   }).join('');
   renderPager('li-pager',liFiltered.length,LI_PS,liPage,'goLi');
@@ -1881,11 +1891,11 @@ function buildSupCards(){
     const topCat=Object.entries(catMap).sort((a,b)=>b[1]-a[1])[0];
     const total=invs.reduce((s,i)=>s+(i.total_amount||0),0);
     return `<div class="sup-card" style="--sc:${s.color}">
-    <div class="sname" style="color:${s.color}">${s.display}</div>
+    <div class="sname" style="color:${s.color}">${esc(s.display)}</div>
     <div class="srow"><span>Invoices</span><span class="sv">${invs.length}</span></div>
     <div class="srow"><span>Total spend</span><span class="sv">${gbp(total)}</span></div>
     <div class="srow"><span>Line items</span><span class="sv">${its.length}</span></div>
-    ${topCat?`<div class="srow"><span>Top category</span><span class="sv" style="font-size:10px">${topCat[0]}</span></div>`:''}
+    ${topCat?`<div class="srow"><span>Top category</span><span class="sv" style="font-size:10px">${esc(topCat[0])}</span></div>`:''}
   </div>`;
   }).join('');
   document.getElementById('sup-cards').innerHTML=html;
@@ -2103,15 +2113,15 @@ function renderSvcSection(){
       d.slice(0,20)+(v.disc?' ('+v.disc+'%)':'')).join(', ')
       :p.depts.join(', ');
     return `<tr>
-      <td style="font-family:monospace;font-size:11px;color:var(--muted)">${p.article}</td>
-      <td>${p.desc}</td>
-      <td><span class="cbadge" style="background:${col}22;color:${col}">${p.tier}</span></td>
+      <td style="font-family:monospace;font-size:11px;color:var(--muted)">${esc(p.article)}</td>
+      <td>${esc(p.desc)}</td>
+      <td><span class="cbadge" style="background:${col}22;color:${col}">${esc(p.tier)}</span></td>
       <td class="num">${gbp2(lo)}</td>
       <td class="num">${gbp2(hi)}</td>
       <td class="num" style="color:#56cf8e">${gbp2(netLo)}</td>
       <td class="num" style="color:#ff6b6b">${gbp2(netHi)}</td>
       <td class="num" style="color:#ff6b6b;font-weight:700">${gbp2(netDelta)}</td>
-      <td style="font-size:10px;color:var(--muted)">${deptInfo}</td>
+      <td style="font-size:10px;color:var(--muted)">${esc(deptInfo)}</td>
     </tr>`;
   }).join('');
 
@@ -2157,13 +2167,13 @@ function renderSvcSection(){
       }).join(', ')+(p.depts.length>3?' +':'')
         :p.depts.slice(0,3).join(', ')+(p.depts.length>3?' +':'');
       return `<tr>
-        <td style="font-family:monospace;font-size:11px;color:var(--muted)">${p.article}</td>
-        <td title="${p.desc}">${p.desc}</td>
-        <td><span class="cbadge" style="background:${col}22;color:${col}">${p.tier}</span></td>
+        <td style="font-family:monospace;font-size:11px;color:var(--muted)">${esc(p.article)}</td>
+        <td title="${esc(p.desc)}">${esc(p.desc)}</td>
+        <td><span class="cbadge" style="background:${col}22;color:${col}">${esc(p.tier)}</span></td>
         <td class="num" style="${p.has_variance?'color:#ff6b6b;font-weight:600':''}">${priceStr}</td>
         <td class="num" style="${p.has_net_variance?'color:#ff9f43;font-weight:600':'color:#56cf8e'}">${netStr}</td>
         <td class="num">${gbp(p.total)}</td>
-        <td style="font-size:10px;color:var(--muted)">${deptInfo}</td>
+        <td style="font-size:10px;color:var(--muted)">${esc(deptInfo)}</td>
         <td>${status}</td>
       </tr>`;
     }).join('');
@@ -2321,18 +2331,18 @@ function renderSvcSection(){
           const tip=`${row.instr}${row.serial!=='—'?' · S/N '+row.serial:''}\n${c.dept}\n${tierLabel?tierLabel+'\n':''}${c.start} → ${c.end}${inferTag}\n${gbp(c.total)}\n${sc.label}`;
           const barClick=`openTlInvoice('${(c.invoice||'').replace(/'/g,"\\'")}','${(c.supplier||'').replace(/'/g,"\\'")}')`;
           const infSty=c.inferred?'border-style:dashed;opacity:0.7':'';
-          bars+=`<div onclick="${barClick}" style="position:absolute;left:${left}%;width:${width}%;background:${sc.color}bb;border:1px solid ${sc.color};border-radius:3px;height:100%;min-width:4px;cursor:pointer;${infSty}" title="${tip}">
-            <span style="font-size:9px;color:#fff;padding:0 4px;white-space:nowrap;overflow:hidden;display:block;line-height:18px;text-shadow:0 0 3px #000;pointer-events:none">${tierLabel}</span>
+          bars+=`<div onclick="${barClick}" style="position:absolute;left:${left}%;width:${width}%;background:${sc.color}bb;border:1px solid ${sc.color};border-radius:3px;height:100%;min-width:4px;cursor:pointer;${infSty}" title="${esc(tip)}">
+            <span style="font-size:9px;color:#fff;padding:0 4px;white-space:nowrap;overflow:hidden;display:block;line-height:18px;text-shadow:0 0 3px #000;pointer-events:none">${esc(tierLabel)}</span>
           </div>`;
         });
 
         const deptCol=deptColorMap[row.dept]||'#6c7cff';
         rows+=`<div style="display:flex;align-items:center;height:42px;margin-bottom:4px;border-bottom:1px solid var(--border)22">
           <div style="width:${LABEL_W}px;flex-shrink:0;padding-right:10px;overflow:hidden;cursor:default">
-            <div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${row.instr}">${row.instr||row.dept}</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(row.instr)}">${esc(row.instr||row.dept)}</div>
             <div style="font-size:10px;color:var(--muted);white-space:nowrap;margin-top:2px">
-              ${row.serial!=='—'?`<span style="font-family:monospace">S/N ${row.serial}</span> · `:'' }
-              <span style="color:${deptCol}">${row.dept}</span>
+              ${row.serial!=='—'?`<span style="font-family:monospace">S/N ${esc(row.serial)}</span> · `:'' }
+              <span style="color:${deptCol}">${esc(row.dept)}</span>
             </div>
           </div>
           <div style="flex:1;position:relative;height:24px">${bars}</div>
@@ -2349,7 +2359,7 @@ function renderSvcSection(){
         const deptCol=deptColorMap[c.dept]||'#6c7cff';
         const tierCol=TIER_PAL[c.tier]||'#aaa';
         const sc=STATUS_CFG[c.status]||{label:c.status,color:'#aaa',bg:'#aaa22'};
-        const invLink=`<a onclick="openTlInvoice('${(c.invoice||'').replace(/'/g,"\\'")}','${(c.supplier||'').replace(/'/g,"\\'")}')" style="color:var(--accent);cursor:pointer;font-family:monospace;font-size:11px">${c.invoice||'—'}</a>`;
+        const invLink=`<a onclick="openTlInvoice('${(c.invoice||'').replace(/'/g,"\\'")}','${(c.supplier||'').replace(/'/g,"\\'")}')" style="color:var(--accent);cursor:pointer;font-family:monospace;font-size:11px">${esc(c.invoice||'—')}</a>`;
         let chainRow='';
         if(c.chain_id&&c.chain_pos>1&&seenChains.has(c.chain_id)){
           const gap=c.gap_days;
@@ -2363,10 +2373,10 @@ function renderSvcSection(){
           <td ${infMark}>${c.start||'—'}${c.inferred?'*':''}</td>
           <td ${infMark}>${c.end||'—'}${c.inferred?'*':''}</td>
           <td style="color:var(--muted);font-size:11px">${c.start&&c.end?durationLabel(c.start,c.end):'—'}</td>
-          <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${deptCol};margin-right:5px"></span>${c.dept}</td>
-          <td>${c.tier!=='—'?`<span class="cbadge" style="background:${tierCol}22;color:${tierCol}">${c.tier}</span>`:'—'}</td>
-          <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.instrument}">${c.instrument}</td>
-          <td style="font-family:monospace;font-size:11px;color:var(--muted)">${c.serial}</td>
+          <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${deptCol};margin-right:5px"></span>${esc(c.dept)}</td>
+          <td>${c.tier!=='—'?`<span class="cbadge" style="background:${tierCol}22;color:${tierCol}">${esc(c.tier)}</span>`:'—'}</td>
+          <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.instrument)}">${esc(c.instrument)}</td>
+          <td style="font-family:monospace;font-size:11px;color:var(--muted)">${esc(c.serial)}</td>
           <td class="num">${gbp2(c.total)}</td>
           <td>${invLink}</td>
           <td><span style="font-size:10px;background:${sc.bg};color:${sc.color};padding:2px 7px;border-radius:10px;white-space:nowrap">${sc.label}</span></td>
@@ -2526,15 +2536,15 @@ renderSvcSection();
       const onclick  = 'openThumbByKey(' + JSON.stringify(h.supplier) + ',' + h.invoice_id + ');closeSearch();';
       return '<div class="sr-hit" onclick="'+onclick+'">'
         + '<div class="sr-top">'
-        +   '<span class="sr-desc">'+(h.description || '')+'</span>'
+        +   '<span class="sr-desc">'+esc(h.description || '')+'</span>'
         +   '<span class="sr-amount">'+fmt(h.total_price)+'</span>'
         + '</div>'
         + '<div class="sr-meta">'
-        +   '<span class="sr-badge" style="background:rgba(108,124,255,.15);color:var(--accent)">'+supLabel+'</span>'
-        +   (h.document_type ? '<span class="sr-badge" style="background:rgba(78,205,196,.15);color:#4ecdc4">'+h.document_type+'</span>' : '')
-        +   '<span>📄 '+(h.invoice_number || h.filename)+'</span>'
+        +   '<span class="sr-badge" style="background:rgba(108,124,255,.15);color:var(--accent)">'+esc(supLabel)+'</span>'
+        +   (h.document_type ? '<span class="sr-badge" style="background:rgba(78,205,196,.15);color:#4ecdc4">'+esc(h.document_type)+'</span>' : '')
+        +   '<span>📄 '+esc(h.invoice_number || h.filename)+'</span>'
         +   '<span>📅 '+(h.invoice_date || '—')+'</span>'
-        +   (h.article ? '<span>🔧 '+h.article+'</span>' : '')
+        +   (h.article ? '<span>🔧 '+esc(h.article)+'</span>' : '')
         +   '<span style="color:var(--border)">·</span>'
         +   '<span>Invoice total '+fmt(h.invoice_total)+'</span>'
         + '</div>'
@@ -3119,7 +3129,7 @@ renderSvcSection();
     const topSkus = Object.entries(skuMap).map(([k, v]) => ({ article: k, desc: v.desc, spend: v.spend }))
       .sort((a,b) => b.spend - a.spend).slice(0, 10);
     document.getElementById('rg-sku-mini-body').innerHTML = topSkus.map(r =>
-      `<tr><td style="font-family:monospace;font-size:10px">${r.article}</td><td style="font-size:11px">${r.desc.slice(0,45)}</td><td class="num">${gbp2(r.spend)}</td></tr>`
+      `<tr><td style="font-family:monospace;font-size:10px">${esc(r.article)}</td><td style="font-size:11px">${esc(r.desc.slice(0,45))}</td><td class="num">${gbp2(r.spend)}</td></tr>`
     ).join('') || '<tr><td colspan="3" style="color:var(--muted);font-size:11px">—</td></tr>';
   }
 
@@ -3135,9 +3145,9 @@ renderSvcSection();
     const sups  = [...new Set(items.map(i => i.supplier_name).filter(Boolean))].sort();
     const depts = [...new Set(items.map(i => i.department).filter(Boolean))].sort();
     document.getElementById('rg-sup-filter').innerHTML =
-      '<option value="">All Suppliers</option>' + sups.map(s => `<option>${s}</option>`).join('');
+      '<option value="">All Suppliers</option>' + sups.map(s => `<option>${esc(s)}</option>`).join('');
     document.getElementById('rg-dept-filter').innerHTML =
-      '<option value="">All Departments</option>' + depts.map(d => `<option>${d}</option>`).join('');
+      '<option value="">All Departments</option>' + depts.map(d => `<option>${esc(d)}</option>`).join('');
     document.getElementById('rg-sup-filter').style.display = G_SUP ? 'none' : '';
   }
 
@@ -3170,15 +3180,15 @@ renderSvcSection();
     const sc = it => it.supplier_color || '#aaa';
     document.getElementById('rg-tbody').innerHTML = slice.map(r => {
       const invCell = r.invoice_id != null
-        ? `<a onclick="openThumbByKey('${r.supplier}',${r.invoice_id})" style="color:var(--accent);text-decoration:none;cursor:pointer;font-family:monospace;font-size:11px" title="Open PDF">${r.invoice_number||r.filename||'—'} 📄</a>`
-        : `<span style="font-family:monospace;font-size:11px">${r.invoice_number||r.filename||'—'}</span>`;
+        ? `<a onclick="openThumbByKey('${r.supplier}',${r.invoice_id})" style="color:var(--accent);text-decoration:none;cursor:pointer;font-family:monospace;font-size:11px" title="Open PDF">${esc(r.invoice_number||r.filename||'—')} 📄</a>`
+        : `<span style="font-family:monospace;font-size:11px">${esc(r.invoice_number||r.filename||'—')}</span>`;
       return `<tr>
-        <td style="font-family:monospace;font-size:11px">${r.article||'—'}</td>
-        <td style="font-size:12px">${(r.description||'—').slice(0,55)}</td>
-        <td><span style="background:${sc(r)}22;color:${sc(r)};border:1px solid ${sc(r)}55;padding:2px 7px;border-radius:10px;font-size:10px;white-space:nowrap">${r.supplier_name||'—'}</span></td>
+        <td style="font-family:monospace;font-size:11px">${esc(r.article||'—')}</td>
+        <td style="font-size:12px">${esc((r.description||'—').slice(0,55))}</td>
+        <td><span style="background:${sc(r)}22;color:${sc(r)};border:1px solid ${sc(r)}55;padding:2px 7px;border-radius:10px;font-size:10px;white-space:nowrap">${esc(r.supplier_name||'—')}</span></td>
         <td>${invCell}</td>
         <td class="num" style="font-size:11px">${r.invoice_date||'—'}</td>
-        <td style="font-size:11px">${r.department||'—'}</td>
+        <td style="font-size:11px">${esc(r.department||'—')}</td>
         <td class="num">${r.quantity!=null?r.quantity:'—'}</td>
         <td class="num">${r.unit_price!=null?gbp2(r.unit_price):'—'}</td>
         <td class="num">${r.total_price!=null?gbp2(r.total_price):'—'}</td>
