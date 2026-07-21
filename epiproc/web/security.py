@@ -16,7 +16,6 @@ from urllib.parse import parse_qs
 
 from fastapi import Request
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
@@ -42,6 +41,14 @@ _CSRF_SAFE = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 # the attacker's account) is a real attack. The double-submit cookie is issued
 # pre-session on the GET /login response and login.html embeds the token, so the
 # form posts a matching _csrf field. /login/mfa is likewise enforced.
+#
+# Caveat (honest scope): pre-session the token is only a double-submit cookie value,
+# not bound to any server-side secret (post-login it is HMAC'd over the session
+# cookie — see _make_csrf_token). So the login-CSRF guard is only as strong as the
+# integrity of the ds_csrf cookie: an attacker who can SET a cookie on our domain
+# (a same-site subdomain under their control, or a network position allowing cookie
+# injection) could submit a matching pair. On a single-host HTTPS deployment with no
+# sibling subdomains that is not reachable; document it rather than overclaim.
 _CSRF_EXEMPT = frozenset({"/health", "/usage/events"})
 
 
@@ -161,7 +168,12 @@ def _key_func(request: Request) -> str:
     username = _request_username(request)
     if username != "anonymous":
         return username
-    return get_remote_address(request)
+    # Pre-auth (login, password reset), key on the client IP. Use _request_ip, NOT
+    # slowapi's get_remote_address: the latter always returns the socket peer, so
+    # behind a reverse proxy every request would carry the proxy's IP and share one
+    # bucket — a single client tripping the limit would lock everyone out. _request_ip
+    # honours EPIPROC_TRUST_XFF to recover the real client IP when we're proxied.
+    return _request_ip(request)
 
 
 limiter = Limiter(key_func=_key_func)
@@ -197,13 +209,17 @@ def _csp(nonce: str) -> str:
     script-execution vector). object-src/base-uri/form-action are locked down as
     additional hardening (no plugins, no <base> hijack of relative script URLs,
     forms may only post same-origin).
+
+    No CDN origin is whitelisted: chart.js/d3/d3-sankey are vendored under
+    /static/vendor and served same-origin, so script-src stays at 'self' — a
+    compromised third-party CDN can't inject into the nonce-protected page.
     """
     return (
         "default-src 'self'; "
-        f"script-src 'self' cdn.jsdelivr.net 'nonce-{nonce}'; "
+        f"script-src 'self' 'nonce-{nonce}'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; "
-        "font-src 'self' cdn.jsdelivr.net; "
+        "font-src 'self'; "
         "object-src 'none'; "
         "base-uri 'self'; "
         "form-action 'self'; "

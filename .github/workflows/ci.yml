@@ -8,6 +8,27 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    # Real Postgres so migrations and SQL are exercised in CI, not just fakes.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: epiproc
+          POSTGRES_PASSWORD: epiproc
+          POSTGRES_DB: epiproc
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U epiproc"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Presence of this DSN opts the @integration tests in (they skip without it).
+      EPIPROC_PG_TEST_DSN: "host=localhost port=5432 dbname=epiproc user=epiproc password=epiproc"
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

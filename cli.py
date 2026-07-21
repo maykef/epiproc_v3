@@ -31,15 +31,21 @@ def cmd_new(args: argparse.Namespace) -> None:
         # (connects with it). EPIPROC_PORT is the HOST publish port; the app
         # always binds 5001 inside the container.
         pg_password = secrets.token_hex(16)
-        env.write_text(
-            f"EPIPROC_INSTANCE_NAME={args.name}\n"
-            f"EPIPROC_INSTITUTION={args.institution or args.name}\n"
-            f"EPIPROC_PORT={args.port}\n"
-            f"POSTGRES_PASSWORD={pg_password}\n"
-            f"EPIPROC_PG_DSN=host=db port=5432 dbname=epiproc user=epiproc password={pg_password}\n"
-            f"EPIPROC_SESSION_KEY={secrets.token_hex(32)}\n"
-            f"EPIPROC_VLLM_URL=http://host.docker.internal:8000/v1\n"
-        )
+        # .env holds two live secrets (POSTGRES_PASSWORD and EPIPROC_SESSION_KEY),
+        # so create it owner-only (0600) — matching the session-key file — before
+        # writing, rather than letting the umask decide. os.open with the mode set
+        # at creation avoids the write-then-chmod window.
+        fd = os.open(env, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(
+                f"EPIPROC_INSTANCE_NAME={args.name}\n"
+                f"EPIPROC_INSTITUTION={args.institution or args.name}\n"
+                f"EPIPROC_PORT={args.port}\n"
+                f"POSTGRES_PASSWORD={pg_password}\n"
+                f"EPIPROC_PG_DSN=host=db port=5432 dbname=epiproc user=epiproc password={pg_password}\n"
+                f"EPIPROC_SESSION_KEY={secrets.token_hex(32)}\n"
+                f"EPIPROC_VLLM_URL=http://host.docker.internal:8000/v1\n"
+            )
     print(f"scaffolded instance at {root}")
     print("next: copy docker/docker-compose.template.yml -> compose.yml, then `epiproc up`")
 

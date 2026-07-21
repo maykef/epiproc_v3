@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -63,6 +65,16 @@ app.add_middleware(
     allow_origins=["http://localhost:5001", "http://127.0.0.1:5001"],
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
+)
+
+# Static assets — vendored front-end libraries (chart.js/d3/d3-sankey), served
+# same-origin so the CSP can keep script-src at 'self' and the dashboard needs no
+# outbound internet. The dir travels inside the package tree (COPY epiproc/ in the
+# image), so resolve it relative to this file rather than the CWD.
+app.mount(
+    "/static",
+    StaticFiles(directory=Path(__file__).resolve().parent / "static"),
+    name="static",
 )
 
 # Routers

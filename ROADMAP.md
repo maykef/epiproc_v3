@@ -32,6 +32,34 @@ its own design + testing pass.
 
 ## Recently closed
 
+- **Postgres integration test in CI** — `ci.yml` now runs a health-checked
+  `postgres:16` service and sets `EPIPROC_PG_TEST_DSN`, so `run_migrations()`
+  (`db/pool.py:42`) and real SQL are exercised in CI instead of only fakes. New
+  `tests/test_integration_postgres.py` (marker `integration`, skipped when no DSN so
+  a dev box with no DB still passes): asserts the full 0001→0008 chain applies from
+  an empty schema, that re-running is idempotent, and round-trips `insert_record()`
+  → `get_suppliers()`/`get_data_quality()` — plus a case pinning the
+  `(supplier, filename)` upsert so a re-processed file overwrites rather than
+  duplicates. A follow-up can drive login→MFA→session through the ASGI stack with
+  `httpx`. Verified locally against a throwaway `postgres:16` (4 integration tests
+  pass; suite = 59 with DSN, 55 + 4 skipped without).
+- **Front-end libs vendored; CDN dropped from the CSP** — chart.js 4.4.4, d3 7.9.0
+  and d3-sankey 0.12.3 are now committed under `web/static/vendor` and served
+  same-origin via a `/static` `StaticFiles` mount (with SRI `integrity`), so the
+  dashboard needs no outbound internet and `_csp()` no longer whitelists
+  `cdn.jsdelivr.net` in `script-src`/`font-src` — a compromised CDN can no longer
+  inject into the nonce-protected page. Regression test: `tests/test_static_vendor.py`.
+- **Rate-limit lockout behind a proxy** — the pre-auth limiter keyed on the raw
+  socket peer (slowapi `get_remote_address`), so behind a reverse proxy every client
+  shared the proxy's IP and one client tripping the login limit locked everyone out.
+  `_key_func` now uses `_request_ip`, honouring `EPIPROC_TRUST_XFF` to recover the
+  real client IP. Regression test: `tests/test_rate_limit_key.py`.
+- **`cli.py new` `.env` perms** — the scaffolded `.env` (holds `POSTGRES_PASSWORD`
+  + `EPIPROC_SESSION_KEY`) is now created owner-only (0600) via `os.open(..., O_EXCL,
+  0o600)`, matching the session-key file. Regression test: `tests/test_cli_env_perms.py`.
+- **Login-CSRF comment accuracy** — the double-submit comment now documents that the
+  pre-session token is unbound (only as strong as `ds_csrf` cookie integrity) rather
+  than overclaiming; no behaviour change, honest scope.
 - **Dashboard XSS / CSP** — VLM-extracted strings are now HTML-escaped on every
   DOM insertion, and the CSP dropped `script-src 'unsafe-inline'`: inline scripts
   carry a per-request nonce and inline event handlers were replaced by delegated

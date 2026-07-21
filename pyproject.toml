@@ -43,6 +43,11 @@ py-modules = ["cli"]
 [tool.setuptools.packages.find]
 include = ["epiproc*"]
 
+[tool.pytest.ini_options]
+markers = [
+    "integration: exercises a real Postgres — skipped unless EPIPROC_PG_TEST_DSN is set (see tests/test_integration_postgres.py)",
+]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
