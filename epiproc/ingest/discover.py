@@ -1,6 +1,6 @@
 """Model-driven onboarding: profile the data and DISCOVER the category set.
 
-Nothing here knows about flowers, labs, or any domain. On a new container's first
+Nothing here knows about any domain or vocabulary in advance. On a new container's first
 run the local model reads a representative sample of the customer's own line items
 and proposes the category vocabulary; that vocabulary then constrains classification
 (ingest/categorise.py) so category names stay consistent. Entirely data-driven.

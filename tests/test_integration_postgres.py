@@ -84,25 +84,25 @@ def test_insert_record_round_trips_to_dashboard(migrated_db):
         "invoice_date": "2026-01-15",
         "currency": "GBP",
         "document_type": "invoice",
-        "seller": {"name": "Acme Blooms"},
+        "seller": {"name": "Acme Supplies"},
         "totals": {"subtotal": 100.0, "total": 100.0},
         "line_items": [
-            {"position": 1, "article": "ROSE-1", "description": "Red rose",
+            {"position": 1, "article": "WIDGET-1", "description": "Steel widget",
              "quantity": 40, "unit_price": 2.0, "total_price": 80.0},
-            {"position": 2, "article": "PEONY-1", "description": "White peony",
+            {"position": 2, "article": "GADGET-1", "description": "Copper gadget",
              "quantity": 10, "unit_price": 2.0, "total_price": 20.0},
         ],
     }
 
     with pool().connection() as conn:
-        inv_id = insert_record(conn, "acme_blooms", "inv42.pdf", record, [],
+        inv_id = insert_record(conn, "acme_supplies", "inv42.pdf", record, [],
                                status="ok", path="/data/invoices/inv42.pdf")
     assert isinstance(inv_id, int)
 
     # Real SQL: header + both line items landed.
     with pool().connection() as conn:
         inv_count = conn.execute(
-            "SELECT count(*) AS c FROM invoices WHERE supplier=%s", ("acme_blooms",)
+            "SELECT count(*) AS c FROM invoices WHERE supplier=%s", ("acme_supplies",)
         ).fetchone()["c"]
         item_count = conn.execute(
             "SELECT count(*) AS c FROM invoice_items WHERE invoice_id=%s", (inv_id,)
@@ -111,7 +111,7 @@ def test_insert_record_round_trips_to_dashboard(migrated_db):
     assert item_count == 2
 
     # Dashboard aggregation queries run against the real rows.
-    assert "acme_blooms" in get_suppliers()
+    assert "acme_supplies" in get_suppliers()
     dq = get_data_quality()
     assert dq["uncategorised_items"] == 2  # insert_record leaves category NULL
 

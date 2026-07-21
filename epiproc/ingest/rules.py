@@ -30,7 +30,7 @@ def _is_credit(rec: dict) -> bool:
 @op("drop_hs_summary")
 def _drop_hs_summary(rec: dict) -> tuple[dict, str | None]:
     """Drop customs/commodity-summary lines (description is a bare 8-digit HS
-    code, e.g. 06031100). Some suppliers (e.g. Dutch flower exporters) repeat the
+    code, e.g. 84713000). Some suppliers repeat the
     whole invoice as an HS-code summary on a later page; counting both double-
     counts spend. A genuine product description is never just an 8-digit number.
     """

@@ -18,8 +18,6 @@ DASHBOARD_TABS = [
     ("departments", "By Department"),
     ("invoices", "Invoices"),
     ("pricetracker", "Price Tracker"),
-    ("svccontracts", "Service Intel"),
-    ("reagents", "Reagents Intel"),
     ("reports", "Reports"),
 ]
 _ALL = [k for k, _ in DASHBOARD_TABS]
@@ -56,9 +54,9 @@ def set_enabled_tabs(tabs) -> None:
 
 
 # ── Categorisation scheme (per customer) ─────────────────────────────────────
-# The category vocabulary is customer-specific: a flower wholesaler categorises
-# by flower type, a lab by equipment/consumables. The scheme is an instruction to
-# the local model; it lives in this instance's DB, editable per customer.
+# The category vocabulary is customer-specific — it depends entirely on what the
+# customer buys. The scheme is an instruction to the local model; it lives in this
+# instance's DB, editable per customer.
 DEFAULT_CATEGORISATION = (
     "Categorise each line item by its product category using a short category "
     "name. For freight, delivery, packaging or handling lines use 'Other'."
@@ -78,7 +76,7 @@ def set_categorisation_scheme(text: str) -> None:
 # own invoice data by the local model on the first run (ingest/discover.py), not
 # hand-written and not hardcoded in the engine. Once set, it is used as a strict
 # JSON-schema enum during classification, so the same product always lands under
-# the same category name (no "Rose"/"Roses" drift). Editable per customer.
+# the same category name (no singular/plural drift). Editable per customer.
 OTHER_CATEGORY = "Other"
 
 
@@ -128,8 +126,8 @@ def set_currency_symbol(sym: str) -> None:
 
 # ── Price Tracker grouping (per customer) ────────────────────────────────────
 # "article" (default): track each SKU/article over time. "category": track by
-# category (e.g. a flower buyer tracks Roses/Chrysanthemums price trends across
-# suppliers), which turns many one-off lines into a few meaningful trend lines.
+# category (track price trends per category across suppliers), which turns many
+# one-off lines into a few meaningful trend lines.
 def get_price_tracker_key() -> str:
     v = get_setting("price_tracker_key")
     return v if v in ("category", "variety") else "article"

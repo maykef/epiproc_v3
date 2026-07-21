@@ -11,13 +11,13 @@ from epiproc.ingest.pipeline import slug_supplier
 
 
 def test_basic_slugify():
-    assert slug_supplier("W. Tuning Bloemenexport") == "w_tuning_bloemenexport"
+    assert slug_supplier("J. Random Traders") == "j_random_traders"
 
 
 def test_legal_suffix_is_stripped_so_variants_collapse():
     # "…B.V." and the bare name must map to ONE key, not two suppliers.
-    assert slug_supplier("MM Flowers Europe B.V.") == "mm_flowers_europe"
-    assert slug_supplier("MM Flowers Europe") == "mm_flowers_europe"
+    assert slug_supplier("Acme Trading Europe B.V.") == "acme_trading_europe"
+    assert slug_supplier("Acme Trading Europe") == "acme_trading_europe"
 
 
 def test_stacked_suffixes_are_stripped():
@@ -26,7 +26,7 @@ def test_stacked_suffixes_are_stripped():
 
 
 def test_single_suffix_forms():
-    assert slug_supplier("Nikon GmbH") == "nikon"
+    assert slug_supplier("Globex GmbH") == "globex"
     assert slug_supplier("Contoso LLC") == "contoso"
 
 

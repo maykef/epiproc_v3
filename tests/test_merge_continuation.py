@@ -22,9 +22,9 @@ def test_new_line_is_appended_and_matched_line_is_updated_in_place():
         "line_items": [
             # Same position + same article -> merge onto the existing line.
             {"position": 1, "article": "A1", "quantity": None,
-             "unit_price": 1.5, "total_price": 15.0, "unit": "stems"},
+             "unit_price": 1.5, "total_price": 15.0, "unit": "units"},
             # New position -> appended as a distinct line.
-            {"position": 2, "article": "A2", "description": "Tulips",
+            {"position": 2, "article": "A2", "description": "Gadgets",
              "unit_price": 2.0, "total_price": 20.0},
         ],
         "totals": {"vat_amount": 5.0, "total": 40.0},
@@ -41,7 +41,7 @@ def test_new_line_is_appended_and_matched_line_is_updated_in_place():
     assert p1["total_price"] == 15.0
     assert p1["quantity"] == 10         # None in continuation -> existing kept
     assert p1["description"] == "Roses"  # not present in continuation -> kept
-    assert p1["unit"] == "stems"        # gap on existing -> filled from continuation
+    assert p1["unit"] == "units"        # gap on existing -> filled from continuation
 
     assert items[1]["position"] == 2    # the new line
 

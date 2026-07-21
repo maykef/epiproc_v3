@@ -28,18 +28,19 @@ document archive into a queryable dataset.
 
 ### 🏷 Categorisation
 Each line item is automatically classified using a **customer-specific scheme**, since
-category definitions differ between buyers. A flower wholesaler categorises by flower
-type (Roses, Peonies, Chrysanthemums); a laboratory by equipment, consumables, and
-reagents. Classification is **two-level (category and variety)** and runs on the local
-model against the extracted text, which keeps it fast and low-cost. The vocabulary is
-editable per customer without code changes.
+category definitions differ between buyers — they depend entirely on what the
+organisation buys. The vocabulary is **discovered from the customer's own invoice data**
+by the local model on first run, not hand-written or hardcoded. Classification is
+**two-level (category and variety)** and runs on the local model against the extracted
+text, which keeps it fast and low-cost. The vocabulary is editable per customer without
+code changes.
 
 ### 📈 Price tracking
 Atlas monitors each recurring product and reports how its price changes over time. For
 every tracked item it records the lowest and highest list and net prices, the net
 change per month, and the discount applied by each department. Tracking granularity is
-configurable per customer — by **article**, **category**, or **variety** — so a floral
-buyer can track by flower type while a laboratory tracks by catalogue article.
+configurable per customer — by **article**, **category**, or **variety** — so each buyer
+tracks price movement at the level that matches how they purchase.
 
 ### 📊 Spend intelligence
 The Overview presents invoice data as decision-ready analytics:
@@ -50,11 +51,7 @@ The Overview presents invoice data as decision-ready analytics:
   KPIs (total invoices, top supplier, top category).
 
 ### 🔍 Insights
-Domain-specific analyses layered on the same data:
-- **Service Intel** — service-contract spend by tier, tier × department, renewal
-  tracking, and **price-variance alerts** (same article, different price by department).
-- **Reagents Intel** — consumable spend by supplier, with reagent catalogue and
-  article-level drill-down.
+Further analyses layered on the same data:
 - **Reports** — parameterised, filterable report generation *(in progress — see roadmap)*.
 
 Every tab, KPI, and column can be enabled or disabled per customer, so each instance

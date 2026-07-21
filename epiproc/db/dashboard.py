@@ -5,15 +5,13 @@ Ported from v1 dashboard_app/api/db.py. Single-DB changes:
     (public) schema of this container's own Postgres.
   * Supplier discovery is DB-first: `SELECT DISTINCT supplier FROM invoices`,
     falling back to config files when the table is empty.
-  * Department normalisation imports from epiproc.normalisation.
-  * CUFS lookup (v1 read an .xls next to a SQLite db) is stubbed to {} — v3 has
-    no SQLite side-car.
+  * Department normalisation imports from epiproc.normalisation (data-driven from
+    the customer's own departments.yml — no organisation is hardcoded).
   * File-backed helpers (claude_costs.jsonl, state/*.json) are stubbed empty.
 """
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date as _date
 from typing import Any
 from urllib.parse import quote
 
@@ -200,26 +198,6 @@ def get_spend_matrix(supplier: str) -> list[dict]:
     )
 
 
-def get_service_intel(supplier: str) -> list[dict]:
-    with pool().connection() as conn:
-        rows = conn.execute("""
-            SELECT ii.id, ii.invoice_id, i.invoice_number,
-                   i.invoice_date::text AS invoice_date,
-                   ii.article, ii.description, ii.quantity, ii.unit_price,
-                   ii.total_price, i.subscription_start, i.subscription_end,
-                   i.service_tier, i.seller_name
-            FROM invoice_items ii
-            JOIN invoices i ON ii.invoice_id = i.id
-            WHERE i.supplier = %s
-              AND ii.category = 'Service Contracts'
-              AND (i.extraction_error IS NULL OR i.extraction_error = '')
-              AND NOT (ii.total_price IS NULL AND ii.unit_price IS NULL
-                       AND ii.article IS NULL)
-            ORDER BY i.invoice_date DESC
-        """, (supplier,)).fetchall()
-    return [dict(r) for r in rows]
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Dashboard data builder — supplies all JS variables for the HTML template
 # ─────────────────────────────────────────────────────────────────────────────
@@ -231,7 +209,6 @@ _INVOICES_SQL = """
         i.currency, i.seller_name, i.buyer_name, i.buyer_department, i.buyer_address,
         i.notes, i.subtotal, i.discount_amount, i.discount_rate_percent,
         i.vat_amount, i.total_amount, i.payment_terms,
-        i.subscription_start, i.subscription_end, i.service_tier,
         i.validation_warning, i.extraction_error,
         i.your_reference, i.order_reference,
         i.ship_to_name, i.ship_to_department, i.ship_to_address,
@@ -250,9 +227,9 @@ _ITEMS_SQL_BASE = """
         ii.quantity, ii.unit, ii.unit_price, ii.total_price, ii.category, ii.variety,
         i.invoice_number, i.invoice_date::text AS invoice_date, i.currency, i.buyer_name,
         i.buyer_department, i.buyer_address, i.notes, i.document_type,
-        i.filename, i.total_amount, i.seller_name, i.subscription_start,
-        i.subscription_end, i.validation_warning, i.extraction_error,
-        i.your_reference, i.order_reference, i.service_tier,
+        i.filename, i.total_amount, i.seller_name,
+        i.validation_warning, i.extraction_error,
+        i.your_reference, i.order_reference,
         i.ship_to_name, i.ship_to_department, i.ship_to_address,
         i.sold_to_name, i.sold_to_department, i.sold_to_address,
         i.discount_rate_percent, i.buyer_customer_number
@@ -281,15 +258,6 @@ def _items_sql(neg_types: list[str]) -> tuple[str, list]:
 # Department normalisation
 # ─────────────────────────────────────────────────────────────────────────────
 
-_CUFS_CACHE: dict[str, dict[str, str]] = {}
-
-
-def _supplier_cufs(supplier: str) -> dict[str, str]:
-    # v1 parsed a CUFS .xls that lived next to a per-supplier SQLite db. v3 has
-    # no SQLite side-car, so there is no CUFS table to load.
-    return {}
-
-
 def _supplier_payer_keywords(supplier: str) -> list[str]:
     try:
         return load_config(supplier).dashboard.get("payer_fallback_keywords") or []
@@ -297,19 +265,16 @@ def _supplier_payer_keywords(supplier: str) -> list[str]:
         return []
 
 
-def _norm_row_dept(row: dict, payer_keywords: list[str], cufs: dict[str, str]) -> str:
+def _norm_row_dept(row: dict, payer_keywords: list[str]) -> str:
     return norm_dept(
         row.get("buyer_name"),
         row.get("buyer_department"),
         row.get("buyer_address"),
         row.get("notes"),
-        row.get("your_reference"),
-        cufs,
-        row.get("order_reference"),
+        payer_fallback_keywords=payer_keywords,
         ship_to_name=row.get("ship_to_name"),
         ship_to_department=row.get("ship_to_department"),
         ship_to_address=row.get("ship_to_address"),
-        payer_fallback_keywords=payer_keywords,
         sold_to_name=row.get("sold_to_name"),
         sold_to_department=row.get("sold_to_department"),
         sold_to_address=row.get("sold_to_address"),
@@ -320,11 +285,10 @@ def _apply_dept_normalisation(
     supplier: str, invoices: list[dict], items: list[dict] | None = None
 ) -> None:
     payer_keywords = _supplier_payer_keywords(supplier)
-    cufs = _supplier_cufs(supplier)
 
     invoice_dept_by_id: dict[Any, str] = {}
     for inv in invoices:
-        dept = _norm_row_dept(inv, payer_keywords, cufs)
+        dept = _norm_row_dept(inv, payer_keywords)
         inv["department"] = dept
         if inv.get("id") is not None:
             invoice_dept_by_id[inv["id"]] = dept
@@ -350,7 +314,7 @@ def _apply_dept_normalisation(
         inv_id = it.get("invoice_id")
         dept = invoice_dept_by_id.get(inv_id) if inv_id is not None else None
         if dept is None:
-            dept = _norm_row_dept(it, payer_keywords, cufs)
+            dept = _norm_row_dept(it, payer_keywords)
             if dept == "Other":
                 cnum = it.get("buyer_customer_number")
                 if cnum and cnum in customer_dept_map:
@@ -438,273 +402,11 @@ def _dash_cat_supplier(items: list[dict], display_name: str) -> list[dict]:
     return [{"cat": k, "sup": display_name, "total": _r(v)} for k, v in agg.items()]
 
 
-def _dash_svc(items: list[dict]) -> dict:
-    today = _date.today().isoformat()
-    svc_items_raw = [it for it in items if (it.get("category") or "") == "Service Contracts"]
-
-    items_list = []
-    for it in svc_items_raw:
-        disc_pct = None
-        drp = it.get("discount_rate_percent")
-        if drp and drp > 0:
-            disc_pct = round(float(drp), 2)
-        # Tier comes from the invoice's own service_tier field (per-tenant data);
-        # unset -> "Unknown" in the aggregation below. No hardcoded supplier ladder.
-        tier = (it.get("service_tier") or "").strip()
-        items_list.append({
-            "article": it.get("article") or "",
-            "desc": it.get("description") or "",
-            "tier": tier,
-            "unit_price": it.get("unit_price"),
-            "qty": it.get("quantity"),
-            "unit": it.get("unit") or "",
-            "total": it.get("total_price"),
-            "invoice": it.get("invoice_number") or "",
-            "date": it.get("invoice_date") or "",
-            "dept": it.get("department") or "Unknown",
-            "disc_pct": disc_pct,
-            "sub_start": it.get("subscription_start"),
-            "sub_end": it.get("subscription_end"),
-            "doc_type": (it.get("document_type") or "").lower(),
-        })
-
-    tier_agg: dict[str, dict] = defaultdict(lambda: {"count": 0, "total": 0.0})
-    for it in items_list:
-        tier = it["tier"] or "Unknown"
-        tier_agg[tier]["count"] += 1
-        if it["total"] is not None:
-            tier_agg[tier]["total"] += it["total"]
-    tier_totals = sorted(
-        [{"tier": k, "count": v["count"], "total": _r(v["total"])} for k, v in tier_agg.items()],
-        key=lambda x: -(x["total"] or 0),
-    )
-
-    prod_agg: dict[str, dict] = {}
-    for it in items_list:
-        key = it["article"] or f"__desc_{it['desc'][:30]}"
-        if key not in prod_agg:
-            prod_agg[key] = {
-                "article": it["article"],
-                "desc": it["desc"],
-                "tier": it["tier"],
-                "prices": [],
-                "net_prices": [],
-                "dept_nets": {},
-                "depts": [],
-                "total": 0.0,
-            }
-        p = prod_agg[key]
-        if it["unit_price"] is not None:
-            p["prices"].append(it["unit_price"])
-        qty = it["qty"] or 0
-        net_p = (it["total"] / qty) if (it["total"] is not None and qty != 0) else it["unit_price"]
-        if net_p is not None:
-            p["net_prices"].append(net_p)
-        dept = it["dept"]
-        if dept not in p["depts"]:
-            p["depts"].append(dept)
-        if dept not in p["dept_nets"]:
-            p["dept_nets"][dept] = {
-                "gross": it["unit_price"],
-                "net": net_p,
-                "disc": it["disc_pct"] or 0,
-            }
-        if it["total"] is not None:
-            p["total"] += it["total"]
-
-    products = []
-    for p in prod_agg.values():
-        p["has_variance"] = len(set(p["prices"])) > 1
-        p["has_net_variance"] = len(set(p["net_prices"])) > 1
-        p["total"] = _r(p["total"])
-        products.append(p)
-    products.sort(key=lambda x: -(x["total"] or 0))
-
-    dept_agg: dict[str, dict] = {}
-    for it in items_list:
-        dept = it["dept"]
-        if dept not in dept_agg:
-            dept_agg[dept] = {"total": 0.0, "tiers": set(), "disc_rates": []}
-        if it["total"] is not None:
-            dept_agg[dept]["total"] += it["total"]
-        if it["tier"]:
-            dept_agg[dept]["tiers"].add(it["tier"])
-        if it["disc_pct"] is not None and it["disc_pct"] > 0:
-            dept_agg[dept]["disc_rates"].append(it["disc_pct"])
-    dept_disc = sorted(
-        [{"dept": d, "total": _r(v["total"]), "tiers": sorted(v["tiers"]),
-          "disc_pct": round(sum(v["disc_rates"]) / len(v["disc_rates"]), 1) if v["disc_rates"] else 0}
-         for d, v in dept_agg.items()],
-        key=lambda x: -(x["total"] or 0),
-    )
-
-    td_agg: dict[tuple, float] = defaultdict(float)
-    for it in items_list:
-        if it["total"] is not None:
-            td_agg[(it["tier"] or "Unknown", it["dept"])] += it["total"]
-    tier_dept = [{"tier": k[0], "dept": k[1], "total": _r(v)} for k, v in td_agg.items()]
-
-    has_discounts = any(it["disc_pct"] for it in items_list if it["disc_pct"])
-
-    # ── Timeline ─────────────────────────────────────────────────────────────
-    import re as _re
-    from datetime import date as _dt
-
-    _NEGATIVE_DOC_TYPES = {"credit note", "credit memo", "cancellation invoice"}
-    _SERIAL_RE = _re.compile(
-        r'(?:Serial\s+(?:no|number)\.?\s*[:#]?\s*|SN\s*#?\s+)(\S+)',
-        _re.IGNORECASE,
-    )
-
-    inv_serials: dict[str, set] = {}
-    for it in items_list:
-        for m in _SERIAL_RE.finditer(it.get("desc") or ""):
-            sn = m.group(1).strip().rstrip(".,;")
-            if len(sn) >= 3:
-                inv_serials.setdefault(it["invoice"], set()).add(sn)
-
-    def _infer_months(item: dict) -> int:
-        unit = (item.get("unit") or "").upper().strip()
-        qty = item.get("qty") or 0
-        if "MON" in unit and qty and qty > 0:
-            return int(qty)
-        desc = (item.get("desc") or "").lower()
-        for pat, months in [
-            (r'(\d+)\s*year', None), (r'(\d+)\s*yr', None),
-            (r'(\d+)\s*mo(?:nth|\.|\b)', None),
-        ]:
-            m = _re.search(pat, desc)
-            if m:
-                n = int(m.group(1))
-                return n * 12 if 'year' in pat or 'yr' in pat else n
-        return 12
-
-    tl_map: dict = {}
-    for it in items_list:
-        if it.get("doc_type") in _NEGATIVE_DOC_TYPES:
-            continue
-        start = it.get("sub_start")
-        end = it.get("sub_end")
-        inferred = False
-        if not start or not end:
-            inv_date = it.get("date")
-            if not inv_date:
-                continue
-            try:
-                inv_dt = _dt.fromisoformat(inv_date)
-            except ValueError:
-                continue
-            months = _infer_months(it)
-            start = start or inv_date
-            if not end:
-                _total = inv_dt.month - 1 + months
-                _end_year = inv_dt.year + _total // 12
-                _end_month = _total % 12 + 1
-                try:
-                    end_dt = inv_dt.replace(year=_end_year, month=_end_month)
-                except ValueError:
-                    end_dt = inv_dt.replace(year=_end_year, month=_end_month, day=28)
-                end = end_dt.isoformat()
-            inferred = True
-        try:
-            dur_days = (_dt.fromisoformat(end) - _dt.fromisoformat(start)).days
-        except ValueError:
-            dur_days = 999
-        if dur_days < 28:
-            continue
-        inv_key = (it["invoice"], start, end)
-        if inv_key not in tl_map:
-            serials = inv_serials.get(it["invoice"], set())
-            tl_map[inv_key] = {
-                "db_id": None,
-                "invoice": it["invoice"],
-                "invoice_date": it["date"],
-                "dept": it["dept"],
-                "instrument": "—",
-                "serial": sorted(serials)[0] if serials else "—",
-                "tier": it["tier"],
-                "start": start,
-                "end": end,
-                "total": it["total"],
-                "supplier": it.get("supplier") or "",
-                "chain_id": None,
-                "chain_pos": None,
-                "chain_len": None,
-                "gap_days": None,
-                "status": "",
-                "inferred": inferred,
-            }
-        else:
-            existing = tl_map[inv_key]
-            if it["total"] is not None:
-                existing["total"] = (existing["total"] or 0) + it["total"]
-
-    timeline = sorted(tl_map.values(), key=lambda x: x["start"] or "")
-
-    serial_groups: dict[str, list] = {}
-    for entry in timeline:
-        sn = entry["serial"]
-        if sn != "—":
-            serial_groups.setdefault(sn, []).append(entry)
-
-    chain_id_ctr = 0
-    for sn, grp in serial_groups.items():
-        grp.sort(key=lambda x: x["start"] or "")
-        chain_id_ctr += 1
-        for i, e in enumerate(grp):
-            e["chain_id"] = chain_id_ctr
-            e["chain_pos"] = i + 1
-            e["chain_len"] = len(grp)
-            if i > 0:
-                prev_end = grp[i - 1]["end"]
-                try:
-                    gap = (_dt.fromisoformat(e["start"]) - _dt.fromisoformat(prev_end)).days
-                    e["gap_days"] = gap
-                except (ValueError, TypeError):
-                    pass
-
-    serials_covered = {
-        sn for sn, grp in serial_groups.items()
-        if any((e["end"] or "") >= today for e in grp)
-    }
-
-    for e in timeline:
-        start, end = e["start"] or "", e["end"] or ""
-        sn = e["serial"]
-        if start > today:
-            e["status"] = "future"
-        elif end >= today:
-            e["status"] = "active"
-        elif sn != "—" and sn in serials_covered:
-            e["status"] = "expired_renewed"
-        else:
-            e["status"] = "expired_lapsed"
-
-    tl_dates = [t["start"] for t in timeline if t["start"]]
-    tl_date_min = min(tl_dates) if tl_dates else None
-    tl_dates_end = [t["end"] for t in timeline if t["end"]]
-    tl_date_max = max(tl_dates_end) if tl_dates_end else None
-
-    return {
-        "items": items_list,
-        "tier_totals": tier_totals,
-        "products": products,
-        "dept_disc": dept_disc,
-        "tier_dept": tier_dept,
-        "has_discounts": has_discounts,
-        "timeline": timeline,
-        "tl_date_min": tl_date_min,
-        "tl_date_max": tl_date_max,
-    }
-
-
 # Fields the dashboard's client JS actually reads from each inlined ITEMS /
-# INVOICES element (per the field-usage audit). The row queries deliberately
-# fetch more than this — the extra columns drive server-side derivation
-# (department normalisation, aggregates, service intel) — but only these are
-# inlined into the page, so the payload doesn't carry ~20 unused columns on every
-# row. The item array is the one that grows with the data, so this is where the
-# "whole DB in the page" growth is contained.
+# INVOICES element. The row queries deliberately fetch more than this — the extra
+# columns drive server-side derivation (department normalisation, aggregates) —
+# but only these are inlined into the page, so the payload doesn't carry ~20 unused
+# columns on every row. The item array is the one that grows with the data.
 _ITEM_KEEP = frozenset({
     "invoice_id", "description", "article", "quantity", "unit_price", "total_price",
     "category", "variety", "invoice_number", "invoice_date", "filename",
@@ -727,12 +429,6 @@ def get_dashboard_data(supplier: str) -> dict:
     display_name = cfg.dashboard.get("display_name", supplier.title())
     color = _readable_color(cfg.dashboard.get("color", "#6c7cff"))
 
-    _empty_svc = {
-        "items": [], "tier_totals": [], "products": [], "dept_disc": [],
-        "tier_dept": [], "has_discounts": False, "timeline": [],
-        "tl_date_min": None, "tl_date_max": None,
-    }
-
     _neg_types = [t.lower() for t in (cfg.dashboard.get("negative_document_types") or [])]
     _isql, _iparams = _items_sql(_neg_types)
 
@@ -746,7 +442,7 @@ def get_dashboard_data(supplier: str) -> dict:
             "n_inv": 0, "n_items": 0, "invoices": [], "items": [],
             "sup_totals": [], "cat_totals": [], "dept_totals": [], "cat_dept": [],
             "monthly_cat": [], "monthly_sup": [], "cat_supplier": [],
-            "sup_names": [display_name], "sup_colors": [color], "svc": _empty_svc,
+            "sup_names": [display_name], "sup_colors": [color],
             "grand_total": 0,
         }
 
@@ -762,25 +458,16 @@ def get_dashboard_data(supplier: str) -> dict:
         invoices.append(d)
 
     items = []
-    items_with_drp = []
     for r in item_rows:
         base = dict(r)
         base["comment"] = ""
         base["supplier"] = supplier
         base["supplier_name"] = display_name
         base["supplier_color"] = color
-        items_with_drp.append(base)
-        slim = dict(base)
-        slim.pop("discount_rate_percent", None)
-        items.append(slim)
+        base.pop("discount_rate_percent", None)
+        items.append(base)
 
     _apply_dept_normalisation(supplier, invoices, items)
-    inv_dept_by_id = {inv["id"]: inv.get("department")
-                      for inv in invoices if inv.get("id") is not None}
-    for it in items_with_drp:
-        dept = inv_dept_by_id.get(it.get("invoice_id"))
-        if dept is not None:
-            it["department"] = dept
 
     return {
         "supplier": supplier,
@@ -801,7 +488,6 @@ def get_dashboard_data(supplier: str) -> dict:
         "cat_supplier": _dash_cat_supplier(items, display_name),
         "sup_names": [display_name],
         "sup_colors": [color],
-        "svc": _dash_svc(items_with_drp),
         "grand_total": sum(i["total_amount"] or 0 for i in invoices if i.get("total_amount") is not None),
     }
 
@@ -828,10 +514,8 @@ def _supplier_colours(suppliers: list[str]) -> dict[str, str]:
 def get_multi_dashboard_data(suppliers: list[str]) -> dict:
     all_invoices: list[dict] = []
     all_items: list[dict] = []
-    all_items_with_drp: list[dict] = []
     meta: list[dict] = []
 
-    svc_by_sup: dict = {}
     colours = _supplier_colours(suppliers)
     for supplier in suppliers:
         d = get_dashboard_data(supplier)
@@ -844,23 +528,6 @@ def get_multi_dashboard_data(suppliers: list[str]) -> dict:
         all_invoices.extend(d["invoices"])
         all_items.extend(d["items"])
         meta.append({"display_name": d["display_name"], "color": col})
-        svc_by_sup[d["display_name"]] = d["svc"]
-
-        cfg = load_config(supplier)
-        inv_dept_by_id = {inv["id"]: inv.get("department")
-                          for inv in d["invoices"] if inv.get("id") is not None}
-        _neg = [t.lower() for t in (cfg.dashboard.get("negative_document_types") or [])]
-        _msql, _mparams = _items_sql(_neg)
-
-        with pool().connection() as conn:
-            for r in conn.execute(_msql, (supplier, *_mparams)).fetchall():
-                row = dict(r)
-                row["comment"] = ""
-                row["supplier"] = supplier
-                row["supplier_name"] = d["display_name"]
-                row["supplier_color"] = col
-                row["department"] = inv_dept_by_id.get(row.get("invoice_id")) or "Unknown"
-                all_items_with_drp.append(row)
 
     sup_totals = []
     for m in meta:
@@ -906,8 +573,6 @@ def get_multi_dashboard_data(suppliers: list[str]) -> dict:
         "sup_names":  [m["display_name"] for m in meta],
         "sup_colors": [m["color"]        for m in meta],
         "sup_keys":   suppliers,
-        "svc":        _dash_svc(all_items_with_drp),
-        "svc_by_sup": svc_by_sup,
         "grand_total": grand_total,
         "n_suppliers": len(suppliers),
     }

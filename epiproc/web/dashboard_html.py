@@ -191,8 +191,6 @@ def _inline_data(data: dict) -> str:
         "<script>\n"
         f"const INVOICES    = {_js_json(data['invoices'])};\n"
         f"const ITEMS       = {_js_json(data['items'])};\n"
-        f"let   SVC         = {_js_json(data['svc'])};\n"
-        f"const SVC_BY_SUP  = {_js_json(data.get('svc_by_sup', {}))};\n"
         "</script>"
     )
 

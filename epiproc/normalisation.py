@@ -1,15 +1,14 @@
 """Department-name normalisation.
 
-Single source of truth for collapsing the raw `buyer_department` / `ship_to_*`
-/ `sold_to_*` extraction fields into the canonical department names defined
-in `configs/departments.yml`. Used by both the Docker dashboard generator
-(`scripts/generate_dashboard_v5.py`) and the host FastAPI dashboard
-(`dashboard_app/api/db.py`) so the two cannot disagree.
+Collapses the raw `buyer_department` / `ship_to_*` / `sold_to_*` extraction
+fields into a canonical department name. It is entirely data-driven: the
+patterns come from the customer's own `departments.yml` (resolved per instance),
+so the engine hardcodes no organisation, department, or domain. A customer with
+no `departments.yml` simply gets every line under "Other".
 """
 from __future__ import annotations
 
 import re
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
 
@@ -35,13 +34,11 @@ def load_dept_entries(configs_dir: Optional[Path] = None) -> list:
 
 
 def dept_from_combo(combo: str, configs_dir: Optional[Path] = None) -> Optional[str]:
+    """Match a lower-cased free-text blob against the customer's department
+    patterns. Returns the configured department name, or None if nothing matches."""
     for entry in load_dept_entries(configs_dir):
         if any(p in combo for p in entry["patterns"]):
             return entry["name"]
-    # Compound pattern not expressible as simple substrings:
-    # addresses that contain "CMR" and "Hills Road/Rd" identify CIMR.
-    if "cmr" in combo and ("hills rd" in combo or "hills road" in combo):
-        return "CIMR"
     return None
 
 
@@ -50,26 +47,17 @@ def norm_dept(
     buyer_department: Optional[str],
     buyer_address: Optional[str] = None,
     notes: Optional[str] = None,
-    your_reference: Optional[str] = None,
-    cufs_map: Optional[dict[str, str]] = None,
-    order_reference: Optional[str] = None,
+    payer_fallback_keywords: Optional[list[str]] = None,
     ship_to_name: Optional[str] = None,
     ship_to_department: Optional[str] = None,
     ship_to_address: Optional[str] = None,
-    payer_fallback_keywords: Optional[list[str]] = None,
     sold_to_name: Optional[str] = None,
     sold_to_department: Optional[str] = None,
     sold_to_address: Optional[str] = None,
     configs_dir: Optional[Path] = None,
 ) -> str:
-    """Resolve an invoice's free-text address fields to a canonical department."""
-    for ref in (your_reference, order_reference):
-        if cufs_map and ref:
-            m = re.match(r"^([A-Za-z]{2})", ref)
-            if m:
-                cd = cufs_map.get(m.group(1).upper())
-                if cd:
-                    return cd
+    """Resolve an invoice's free-text address fields to a canonical department,
+    using the customer's configured patterns. Falls back to "Other"."""
     combo = " ".join(filter(None, [buyer_name, buyer_department, buyer_address])).lower()
     sold_to = re.search(r"[Ss]old-to address\s*:\s*(.+?)\.", notes or "")
     if sold_to:
@@ -104,75 +92,3 @@ def norm_dept(
         if dept and dept != "Shared Services":
             return dept
     return "Other"
-
-
-def load_cufs_table(db_path: Path) -> dict:
-    """Parse `departmental_contacts.xls` sitting next to db_path, return {CUFS_code: dept}."""
-    class _TP(HTMLParser):
-        def __init__(self):
-            super().__init__()
-            self.rows: list = []
-            self._row: list = []
-            self._cell = ""
-            self._in = False
-
-        def handle_starttag(self, tag, attrs):
-            if tag in ("td", "th"):
-                self._in = True
-                self._cell = ""
-            elif tag == "tr":
-                self._row = []
-
-        def handle_endtag(self, tag):
-            if tag in ("td", "th"):
-                self._row.append(self._cell.strip())
-                self._in = False
-            elif tag == "tr":
-                if any(c for c in self._row):
-                    self.rows.append(self._row)
-
-        def handle_data(self, d):
-            if self._in:
-                self._cell += d
-
-    p = _TP()
-    try:
-        xls = db_path.parent / "departmental_contacts.xls"
-        p.feed(xls.read_text(errors="replace"))
-    except Exception:
-        return {}
-
-    def _label(name: str) -> Optional[str]:
-        n = name.upper()
-        if "PATHOLOGY" in n and "CIMR" not in n:
-            return "Pathology"
-        if "SAINSBURY" in n:
-            return "Sainsbury Laboratory"
-        if "PLANT SCIENCE" in n:
-            return "Plant Sciences"
-        if "CRUK" in n:
-            return "CRUK Cambridge Institute"
-        if "STEM CELL" in n:
-            return "Stem Cell Institute"
-        if "GURDON" in n:
-            return "Gurdon Institute"
-        if "CIMR" in n:
-            return "CIMR"
-        if "BIOCHEMISTRY" in n and "CIMR" not in n:
-            return "Biochemistry"
-        if "GENETICS" in n:
-            return "Genetics"
-        if "ZOOLOGY" in n:
-            return "Zoology"
-        return None
-
-    result: dict[str, str] = {}
-    for row in p.rows[1:]:
-        if len(row) < 2:
-            continue
-        code = row[1].strip()
-        if len(code) == 2 and code.isalpha():
-            lbl = _label(row[0].strip())
-            if lbl:
-                result[code.upper()] = lbl
-    return result

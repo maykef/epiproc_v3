@@ -18,8 +18,8 @@ from epiproc.db.invoices import insert_record
 from epiproc.ingest import pdf_vlm, rules
 from epiproc.settings import settings
 
-# Legal-form suffixes stripped so "MM Flowers Europe B.V." and "MM Flowers Europe"
-# collapse to one supplier key instead of two. "b_v" is what "B.V." slugifies to.
+# Legal-form suffixes stripped so "Acme Trading B.V." and "Acme Trading" collapse
+# to one supplier key instead of two. "b_v" is what "B.V." slugifies to.
 _SUFFIX_RE = re.compile(
     r"_(b_v|bv|ltd|limited|plc|llc|inc|co|gmbh|ag|sa|nv|srl|oy|as|kg|spa)$")
 

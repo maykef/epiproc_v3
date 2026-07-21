@@ -5,8 +5,8 @@ fast and cheap. The category vocabulary is DISCOVERED from the customer's own da
 by the local model on first run (ingest/discover.py) and stored per instance — the
 engine hardcodes no domain terms. That vocabulary is applied here as a strict
 JSON-schema `enum`, so guided decoding constrains `category` to exactly those
-values: the same product always lands under the same name (no "Rose"/"Roses"
-drift). `variety` (the specific product/model/cultivar) is open free text.
+values: the same product always lands under the same name (no singular/plural
+drift). `variety` (the specific product/model/variant) is open free text.
 """
 from __future__ import annotations
 
