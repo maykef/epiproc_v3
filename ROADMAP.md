@@ -32,6 +32,22 @@ its own design + testing pass.
 
 ## Recently closed
 
+- **Domain purge — engine made fully generic** — removed all lab/microscopy/
+  research-institute code a reviewer could use to infer origins: the CUFS
+  (Cambridge University Financial System) subsystem + hardcoded institutes in
+  `normalisation.py` (now config-driven via `departments.yml`), the **Reagents
+  Intel** and **Service Intel** tabs/pages/JS + the `_dash_svc` builder +
+  `get_service_intel` + `svc` plumbing, microscopy-flavoured Reports presets
+  (TCO/capital-equipment/instrument/service-contract/serial-number), and stale
+  comments/test fixtures. Deleted `docs/AUDIT.md` (named the "18 supplier YAMLs
+  crown jewel"). −1546 lines; clone-verified (renders, `node --check` clean, 55
+  tests). Kept generic "By Department" and "Reports" (genericised) by design.
+- **Customer DB now actually backed up** — the daily `nvme8tb`→`tank` rsync
+  silently skipped `pgdata` (postgres-owned 0700, unreadable by the backup user),
+  so the DB wasn't in the backup. Added `~/bin/dump_customer_dbs.sh` (cron 01:15)
+  that `pg_dump`s each running customer DB into `<customer>/snapshots/nightly-db.sql.gz`
+  before the 02:00 mirror. Not a repo file — see memory `backups-and-db-dump`.
+
 - **Postgres integration test in CI** — `ci.yml` now runs a health-checked
   `postgres:16` service and sets `EPIPROC_PG_TEST_DSN`, so `run_migrations()`
   (`db/pool.py:42`) and real SQL are exercised in CI instead of only fakes. New
