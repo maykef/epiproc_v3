@@ -1,0 +1,198 @@
+{% extends "admin/base.html" %}
+{% block title %}Costing — {{ product.name }}{% endblock %}
+{% macro money(v) %}{% if v is not none %}{{ '%.4f'|format(v) }}{% else %}—{% endif %}{% endmacro %}
+{% macro pct(v) %}{% if v is not none %}{{ '%.2f'|format(v * 100) }}%{% else %}—{% endif %}{% endmacro %}
+{% macro num(v) %}{{ v if v is not none else '' }}{% endmacro %}
+{% block content %}
+<h1>Costing — {{ product.name }}</h1>
+<p style="color:var(--muted);font-size:13px;margin-top:-4px">
+  {% if product.ean %}EAN {{ product.ean }} · {% endif %}UPT {{ product.units_per_tray }} ·
+  <a href="/admin/costing/products" style="color:var(--accent)">← Products</a>
+</p>
+
+<form method="post" action="/admin/costing/products/{{ product.id }}/cost/calculate">
+  <div class="card">
+    <h2>Product &amp; rates</h2>
+    <div class="row row-3">
+      <div class="field"><label>Units per tray (UPT)</label><input type="number" name="units_per_tray" step="1" min="0" value="{{ f.units_per_tray }}"></div>
+      <div class="field"><label>EUR rate</label><input type="number" name="eur_rate" step="any" value="{{ f.eur_rate }}"></div>
+      <div class="field"><label>VAT rate (fraction)</label><input type="number" name="vat_rate" step="any" value="{{ f.vat_rate }}"></div>
+    </div>
+    <div class="row row-2">
+      <div class="field"><label>Selling price (ex VAT)</label><input type="number" name="selling_price" step="any" value="{{ num(f.selling_price) }}"></div>
+      <div class="field"><label>Retail price (inc VAT)</label><input type="number" name="retail_price" step="any" value="{{ num(f.retail_price) }}"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Materials</h2>
+    <p style="color:var(--muted);font-size:12px;margin-top:-4px">Transport units = sum of quantities below. Blank rows are ignored.</p>
+    <table>
+      <thead><tr><th>Name</th><th>Unit cost</th><th>Qty</th></tr></thead>
+      <tbody>
+      {% for m in material_rows %}
+        <tr>
+          <td><input type="text" name="material_name" value="{{ m.name }}"></td>
+          <td><input type="number" name="material_cost" step="any" value="{{ m.unit_cost }}"></td>
+          <td><input type="number" name="material_qty" step="any" value="{{ m.qty }}"></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="row row-3" style="margin-top:14px">
+      <div class="field"><label>Inbound: qty per box</label><input type="number" name="inbound_qty_per_box" step="any" value="{{ f.inbound_qty_per_box }}"></div>
+      <div class="field"><label>Inbound: boxes per CC</label><input type="number" name="inbound_boxes_per_cc" step="any" value="{{ f.inbound_boxes_per_cc }}"></div>
+      <div class="field"><label>Inbound: pallet rate</label><input type="number" name="inbound_pallet_rate" step="any" value="{{ f.inbound_pallet_rate }}"></div>
+    </div>
+    <div class="field" style="max-width:240px"><label>Waste % (fraction)</label><input type="number" name="waste_pct" step="any" value="{{ f.waste_pct }}"></div>
+  </div>
+
+  <div class="card">
+    <h2>Packaging &amp; equipment</h2>
+    <p style="color:var(--muted);font-size:12px;margin-top:-4px">Set a quantity to include a line; 0 leaves it off.</p>
+    <table>
+      <thead><tr><th>Per-unit packaging</th><th>Unit cost</th><th>Qty</th></tr></thead>
+      <tbody>
+      {% for it in pack_unit_items %}
+        <tr><td>{{ it.name }}</td><td>{{ '%.4f'|format(it.unit_cost) }}</td>
+            <td><input type="number" name="qty_{{ it.id }}" step="any" value="{{ it.qty }}" style="max-width:120px"></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <table style="margin-top:12px">
+      <thead><tr><th>Per-case packaging (÷ UPT)</th><th>Unit cost</th><th>Qty</th></tr></thead>
+      <tbody>
+      {% for it in pack_case_items %}
+        <tr><td>{{ it.name }}</td><td>{{ '%.4f'|format(it.unit_cost) }}</td>
+            <td><input type="number" name="qty_{{ it.id }}" step="any" value="{{ it.qty }}" style="max-width:120px"></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="row row-3" style="margin-top:14px">
+      <div class="field"><label>Packaging waste %</label><input type="number" name="pack_waste" step="any" value="{{ f.pack_waste }}"></div>
+      <div class="field"><label>Packaging write-off %</label><input type="number" name="pack_write_off" step="any" value="{{ f.pack_write_off }}"></div>
+      <div class="field"><label>Packaging storage %</label><input type="number" name="pack_storage" step="any" value="{{ f.pack_storage }}"></div>
+    </div>
+    <div class="field" style="max-width:340px">
+      <label>Box type</label>
+      <select name="box_id">
+        <option value="">— none —</option>
+        {% for b in box_types %}
+          <option value="{{ b.id }}" {% if f.box_code and b.code == f.box_code %}selected{% endif %}>{{ b.code }} — {{ '%.4f'|format(b.price) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <table style="margin-top:12px">
+      <thead><tr><th>Equipment</th><th>Unit cost</th><th>Qty</th></tr></thead>
+      <tbody>
+      {% for it in equipment_items %}
+        <tr><td>{{ it.name }}</td><td>{{ '%.4f'|format(it.unit_cost) }}</td>
+            <td><input type="number" name="qty_{{ it.id }}" step="any" value="{{ it.qty }}" style="max-width:120px"></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Outbound distribution</h2>
+    <div class="row row-2">
+      <div class="field"><label>Price per pallet</label><input type="number" name="ob_price_per_pallet" step="any" value="{{ f.ob_price_per_pallet }}"></div>
+      <div class="field"><label>Fill rate (fraction)</label><input type="number" name="ob_fill_rate" step="any" value="{{ f.ob_fill_rate }}"></div>
+    </div>
+    <div class="row row-2">
+      <div class="field"><label>Boxes on order</label><input type="number" name="ob_boxes_on_order" step="any" value="{{ f.ob_boxes_on_order }}"></div>
+      <div class="field"><label>Fuel surcharge % (fraction)</label><input type="number" name="ob_fuel_surcharge_pct" step="any" value="{{ f.ob_fuel_surcharge_pct }}"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Labour &amp; operations</h2>
+    <table>
+      <thead><tr><th>Labour</th><th>Unit cost</th><th>Qty</th></tr></thead>
+      <tbody>
+      {% for it in labour_items %}
+        <tr><td>{{ it.name }}</td><td>{{ '%.4f'|format(it.unit_cost) }}</td>
+            <td><input type="number" name="qty_{{ it.id }}" step="any" value="{{ it.qty }}" style="max-width:120px"></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="row row-2" style="margin-top:14px">
+      <div class="field"><label>Intake labour % (of labour subtotal)</label><input type="number" name="intake_labour_pct" step="any" value="{{ f.intake_labour_pct }}"></div>
+      <div class="field"><label>Additional % (of total labour)</label><input type="number" name="additional_pct" step="any" value="{{ f.additional_pct }}"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Target margins (reverse solvers)</h2>
+    <div class="row row-2">
+      <div class="field"><label>Customer target margin (fraction)</label><input type="number" name="customer_target_margin" step="any" value="{{ f.customer_target_margin }}"></div>
+      <div class="field"><label>Our target margin (fraction)</label><input type="number" name="our_target_margin" step="any" value="{{ f.our_target_margin }}"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <button type="submit" class="btn btn-primary">Calculate</button>
+      <span style="flex:1"></span>
+      <label style="text-transform:none;letter-spacing:0;margin:0;display:flex;gap:8px;align-items:center">
+        Save as
+        <select name="status" style="width:auto">
+          <option value="draft">draft</option>
+          <option value="final">final</option>
+        </select>
+      </label>
+      <button type="submit" class="btn btn-ghost" formaction="/admin/costing/products/{{ product.id }}/cost/save">Save version</button>
+    </div>
+  </div>
+</form>
+
+{% if results %}
+<div class="card">
+  <h2>Cost breakdown</h2>
+  <table>
+    <tbody>
+      <tr><td>Materials total</td><td style="text-align:right">{{ money(results.materials_total) }}</td></tr>
+      <tr><td>Inbound transport / unit</td><td style="text-align:right">{{ money(results.inbound_per_unit) }}</td></tr>
+      <tr><td>Waste</td><td style="text-align:right">{{ money(results.waste) }}</td></tr>
+      <tr style="font-weight:700"><td>Raw materials</td><td style="text-align:right">{{ money(results.raw_materials) }}</td></tr>
+      <tr><td>Packaging total</td><td style="text-align:right">{{ money(results.packaging_total) }}</td></tr>
+      <tr><td>Box / unit</td><td style="text-align:right">{{ money(results.box_per_unit) }}</td></tr>
+      <tr><td>Equipment total</td><td style="text-align:right">{{ money(results.equipment_total) }}</td></tr>
+      <tr style="font-weight:700"><td>Packaging &amp; equipment</td><td style="text-align:right">{{ money(results.pkg_equip_total) }}</td></tr>
+      <tr><td>Outbound / unit</td><td style="text-align:right">{{ money(results.outbound_per_unit) }}</td></tr>
+      <tr><td>Fuel surcharge</td><td style="text-align:right">{{ money(results.fuel) }}</td></tr>
+      <tr style="font-weight:700"><td>Outbound total</td><td style="text-align:right">{{ money(results.outbound_total) }}</td></tr>
+      <tr><td>Labour items</td><td style="text-align:right">{{ money(results.labour_items) }}</td></tr>
+      <tr><td>Intake labour</td><td style="text-align:right">{{ money(results.intake) }}</td></tr>
+      <tr><td>Additional</td><td style="text-align:right">{{ money(results.additional) }}</td></tr>
+      <tr><td>Case cost (info)</td><td style="text-align:right">{{ money(results.case_cost) }}</td></tr>
+      <tr style="font-weight:700"><td>Operations total</td><td style="text-align:right">{{ money(results.operations_total) }}</td></tr>
+      <tr style="font-weight:700;color:var(--accent)"><td>Total direct cost</td><td style="text-align:right">{{ money(results.total_direct_cost) }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Gross profit</h2>
+  <table>
+    <tbody>
+      <tr><td>Our GP</td><td style="text-align:right">{{ money(results.our_gp) }}</td></tr>
+      <tr><td>Our GP %</td><td style="text-align:right">{{ pct(results.our_gp_pct) }}</td></tr>
+      <tr><td>Customer net (retail ÷ (1+VAT))</td><td style="text-align:right">{{ money(results.customer_net) }}</td></tr>
+      <tr><td>Customer GP</td><td style="text-align:right">{{ money(results.customer_gp) }}</td></tr>
+      <tr><td>Customer GP %</td><td style="text-align:right">{{ pct(results.customer_gp_pct) }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Target-price solvers</h2>
+  <table>
+    <tbody>
+      <tr><td>Target retail (for customer target margin)</td><td style="text-align:right">{{ money(results.target_retail) }}</td></tr>
+      <tr><td>Target selling (for our target margin)</td><td style="text-align:right">{{ money(results.target_selling) }}</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

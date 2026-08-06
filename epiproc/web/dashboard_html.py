@@ -240,6 +240,62 @@ def _tab_toggle_js() -> str:
     )
 
 
+def _costing_dashboard_script() -> str:
+    """Customer-facing 'Costing' tab: inline the read-only costing snapshot data
+    and a pure-DOM renderer. Data is embedded via _js_json (script-context safe);
+    all product-derived text is escaped on insert (no inline handlers — the tab is
+    lazily initialised by the nav's data-init="initCosting"). Guarded so an old DB
+    without the costing tables never breaks the dashboard."""
+    try:
+        from epiproc.db.costing import get_costing_dashboard_data
+        data = get_costing_dashboard_data()
+    except Exception:  # noqa: BLE001 — costing tables may be absent on an old DB
+        data = {"products": []}
+    return (
+        "<script>\n"
+        f"window.COSTING_DATA = {_js_json(data)};\n"
+        "function initCosting(){\n"
+        "  var root=document.getElementById('costing-root');\n"
+        "  if(!root||root.dataset.done==='1')return; root.dataset.done='1';\n"
+        "  var M={'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'};\n"
+        "  function esc(s){return (s==null?'':String(s)).replace(/[&<>\"']/g,function(c){return M[c];});}\n"
+        "  function money(v){return v==null?'\\u2014':Number(v).toFixed(4);}\n"
+        "  function pct(v){return v==null?'\\u2014':(Number(v)*100).toFixed(2)+'%';}\n"
+        "  var D=(window.COSTING_DATA&&window.COSTING_DATA.products)||[];\n"
+        "  if(!D.length){root.innerHTML='<div class=\"card\"><p style=\"color:var(--muted)\">"
+        "No final costings yet. An administrator creates them under Admin \\u2192 Costing.</p></div>';return;}\n"
+        "  var h='<div class=\"card\"><h2>Product costing (latest final version)</h2>"
+        "<table><thead><tr><th>Product</th><th>EAN</th><th>Selling</th>"
+        "<th>Total cost</th><th>Our GP%</th><th>Customer GP%</th></tr></thead><tbody>';\n"
+        "  D.forEach(function(p){\n"
+        "    h+='<tr><td>'+esc(p.name)+(p.version==null?' <span style=\\\"color:var(--muted)\\\">(no final costing)</span>':' <span style=\\\"color:var(--muted)\\\">v'+esc(p.version)+'</span>')+'</td>'\n"
+        "      +'<td style=\\\"color:var(--muted)\\\">'+esc(p.ean||'\\u2014')+'</td>'\n"
+        "      +'<td>'+money(p.selling_price)+'</td>'\n"
+        "      +'<td>'+money(p.total_direct_cost)+'</td>'\n"
+        "      +'<td>'+pct(p.our_gp_pct)+'</td>'\n"
+        "      +'<td>'+pct(p.customer_gp_pct)+'</td></tr>';\n"
+        "    var r=p.results;\n"
+        "    if(r){\n"
+        "      h+='<tr><td colspan=\\\"6\\\"><details><summary style=\\\"cursor:pointer;color:var(--accent)\\\">Breakdown</summary>'\n"
+        "        +'<table style=\\\"margin-top:8px\\\"><tbody>'\n"
+        "        +'<tr><td>Raw materials</td><td style=\\\"text-align:right\\\">'+money(r.raw_materials)+'</td></tr>'\n"
+        "        +'<tr><td>Packaging &amp; equipment</td><td style=\\\"text-align:right\\\">'+money(r.pkg_equip_total)+'</td></tr>'\n"
+        "        +'<tr><td>Outbound total</td><td style=\\\"text-align:right\\\">'+money(r.outbound_total)+'</td></tr>'\n"
+        "        +'<tr><td>Operations total</td><td style=\\\"text-align:right\\\">'+money(r.operations_total)+'</td></tr>'\n"
+        "        +'<tr style=\\\"font-weight:700\\\"><td>Total direct cost</td><td style=\\\"text-align:right\\\">'+money(r.total_direct_cost)+'</td></tr>'\n"
+        "        +'<tr><td>Customer net</td><td style=\\\"text-align:right\\\">'+money(r.customer_net)+'</td></tr>'\n"
+        "        +'<tr><td>Target retail</td><td style=\\\"text-align:right\\\">'+money(r.target_retail)+'</td></tr>'\n"
+        "        +'<tr><td>Target selling</td><td style=\\\"text-align:right\\\">'+money(r.target_selling)+'</td></tr>'\n"
+        "        +'</tbody></table></details></td></tr>';\n"
+        "    }\n"
+        "  });\n"
+        "  h+='</tbody></table></div>';\n"
+        "  root.innerHTML=h;\n"
+        "}\n"
+        "</script>"
+    )
+
+
 def _data_quality_banner() -> str:
     """A visible ingest-health strip on the Overview: failed PDFs (otherwise
     silently missing from the dataset) and invoices that don't reconcile."""
@@ -284,7 +340,7 @@ def _apply(template: str, subs: dict) -> str:
     template = template.replace("</nav>", _LOGOUT_BTN, 1)
     template = template.replace("{{INSTITUTION}}", settings.institution)
     template = template.replace("{{DATA_QUALITY}}", _data_quality_banner())
-    template = template.replace("</body>", _tab_toggle_js() + "</body>", 1)
+    template = template.replace("</body>", _costing_dashboard_script() + _tab_toggle_js() + "</body>", 1)
     # Currency symbol is per-customer (the template hardcodes £). Applied after
     # substitutions so injected values (e.g. the header grand total) convert too.
     from epiproc.db.settings import get_currency_symbol, get_enabled_tabs, get_price_tracker_key

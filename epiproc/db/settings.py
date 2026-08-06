@@ -19,6 +19,7 @@ DASHBOARD_TABS = [
     ("invoices", "Invoices"),
     ("pricetracker", "Price Tracker"),
     ("reports", "Reports"),
+    ("costing", "Costing"),
 ]
 _ALL = [k for k, _ in DASHBOARD_TABS]
 

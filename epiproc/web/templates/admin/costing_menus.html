@@ -1,0 +1,143 @@
+{% extends "admin/base.html" %}
+{% block title %}Costing — menus &amp; defaults{% endblock %}
+{% set kind_labels = {
+  'packaging_per_unit': 'Packaging — per unit',
+  'packaging_per_case': 'Packaging — per case',
+  'equipment': 'Equipment',
+  'labour': 'Labour'
+} %}
+{% block content %}
+<h1>Costing menus, box types &amp; defaults</h1>
+<p style="color:var(--muted);font-size:13px;margin-top:-4px">
+  Reusable line items and lookups. Editing a price here changes future costings only —
+  saved costings keep the price that was resolved when they were saved.
+  <a href="/admin/costing/products" style="color:var(--accent)">← Back to products</a>
+</p>
+
+{% for kind in menu_kinds %}
+<div class="card">
+  <h2>{{ kind_labels[kind] }}</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Unit cost</th><th>Order</th><th>Active</th><th></th></tr></thead>
+    <tbody>
+    {% for it in grouped[kind] %}
+      <tr>
+        <td>{{ it.name }}</td>
+        <td>{{ '%.4f'|format(it.unit_cost) }}</td>
+        <td>{{ it.sort_order }}</td>
+        <td>{% if it.active %}<span class="badge badge-ok">yes</span>{% else %}<span class="badge badge-err">no</span>{% endif %}</td>
+        <td style="text-align:right">
+          <details style="display:inline-block;text-align:left">
+            <summary style="display:inline">Edit</summary>
+            <form method="post" action="/admin/costing/menus/item" style="margin-top:10px">
+              <input type="hidden" name="item_id" value="{{ it.id }}">
+              <input type="hidden" name="kind" value="{{ kind }}">
+              <div class="row row-3">
+                <div class="field"><label>Name</label><input type="text" name="name" value="{{ it.name }}" required></div>
+                <div class="field"><label>Unit cost</label><input type="number" name="unit_cost" step="any" value="{{ it.unit_cost }}"></div>
+                <div class="field"><label>Order</label><input type="number" name="sort_order" step="1" value="{{ it.sort_order }}"></div>
+              </div>
+              <label style="display:inline-flex;gap:8px;align-items:center;text-transform:none;letter-spacing:0">
+                <input type="checkbox" name="active" {% if it.active %}checked{% endif %} style="width:auto"> Active
+              </label>
+              <div style="margin-top:10px"><button type="submit" class="btn btn-primary btn-sm">Save</button></div>
+            </form>
+          </details>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <details style="margin-top:12px">
+    <summary style="color:var(--accent);cursor:pointer">+ Add {{ kind_labels[kind]|lower }} item</summary>
+    <form method="post" action="/admin/costing/menus/item" style="margin-top:10px">
+      <input type="hidden" name="kind" value="{{ kind }}">
+      <div class="row row-3">
+        <div class="field"><label>Name</label><input type="text" name="name" required></div>
+        <div class="field"><label>Unit cost</label><input type="number" name="unit_cost" step="any" value="0"></div>
+        <div class="field"><label>Order</label><input type="number" name="sort_order" step="1" value="0"></div>
+      </div>
+      <input type="hidden" name="active" value="on">
+      <button type="submit" class="btn btn-primary btn-sm">Add item</button>
+    </form>
+  </details>
+</div>
+{% endfor %}
+
+<div class="card">
+  <h2>Box types</h2>
+  <table>
+    <thead><tr><th>Code</th><th>Model</th><th>Dimensions</th><th>Price</th><th>Active</th><th></th></tr></thead>
+    <tbody>
+    {% for b in box_types %}
+      <tr>
+        <td>{{ b.code }}</td>
+        <td style="color:var(--muted)">{{ b.model or '—' }}</td>
+        <td style="color:var(--muted)">{{ b.dimensions or '—' }}</td>
+        <td>{{ '%.4f'|format(b.price) }}</td>
+        <td>{% if b.active %}<span class="badge badge-ok">yes</span>{% else %}<span class="badge badge-err">no</span>{% endif %}</td>
+        <td style="text-align:right">
+          <details style="display:inline-block;text-align:left">
+            <summary style="display:inline">Edit</summary>
+            <form method="post" action="/admin/costing/menus/box" style="margin-top:10px">
+              <input type="hidden" name="box_id" value="{{ b.id }}">
+              <div class="row row-2">
+                <div class="field"><label>Code</label><input type="text" name="code" value="{{ b.code }}" required></div>
+                <div class="field"><label>Price</label><input type="number" name="price" step="any" value="{{ b.price }}"></div>
+              </div>
+              <div class="row row-2">
+                <div class="field"><label>Model</label><input type="text" name="model" value="{{ b.model or '' }}"></div>
+                <div class="field"><label>Dimensions</label><input type="text" name="dimensions" value="{{ b.dimensions or '' }}"></div>
+              </div>
+              <label style="display:inline-flex;gap:8px;align-items:center;text-transform:none;letter-spacing:0">
+                <input type="checkbox" name="active" {% if b.active %}checked{% endif %} style="width:auto"> Active
+              </label>
+              <div style="margin-top:10px"><button type="submit" class="btn btn-primary btn-sm">Save</button></div>
+            </form>
+          </details>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <details style="margin-top:12px">
+    <summary style="color:var(--accent);cursor:pointer">+ Add box type</summary>
+    <form method="post" action="/admin/costing/menus/box" style="margin-top:10px">
+      <div class="row row-2">
+        <div class="field"><label>Code</label><input type="text" name="code" required></div>
+        <div class="field"><label>Price</label><input type="number" name="price" step="any" value="0"></div>
+      </div>
+      <div class="row row-2">
+        <div class="field"><label>Model</label><input type="text" name="model"></div>
+        <div class="field"><label>Dimensions</label><input type="text" name="dimensions"></div>
+      </div>
+      <input type="hidden" name="active" value="on">
+      <button type="submit" class="btn btn-primary btn-sm">Add box type</button>
+    </form>
+  </details>
+</div>
+
+<div class="card">
+  <h2>Costing defaults</h2>
+  <p style="color:var(--muted);font-size:12px;margin-top:-4px">
+    Prefill values for new costings. All percentages are fractions (0.20 = 20%).
+  </p>
+  <form method="post" action="/admin/costing/defaults">
+    <div class="row row-3">
+      <div class="field"><label>VAT rate</label><input type="number" name="vat_rate" step="any" value="{{ defaults.vat_rate }}"></div>
+      <div class="field"><label>EUR rate</label><input type="number" name="eur_rate" step="any" value="{{ defaults.eur_rate }}"></div>
+      <div class="field"><label>USD rate</label><input type="number" name="usd_rate" step="any" value="{{ defaults.usd_rate }}"></div>
+    </div>
+    <div class="row row-3">
+      <div class="field"><label>Waste %</label><input type="number" name="waste_pct" step="any" value="{{ defaults.waste_pct }}"></div>
+      <div class="field"><label>Intake labour %</label><input type="number" name="intake_labour_pct" step="any" value="{{ defaults.intake_labour_pct }}"></div>
+      <div class="field"><label>Additional %</label><input type="number" name="additional_pct" step="any" value="{{ defaults.additional_pct }}"></div>
+    </div>
+    <div class="row row-2">
+      <div class="field"><label>Customer target margin</label><input type="number" name="customer_target_margin" step="any" value="{{ defaults.customer_target_margin }}"></div>
+      <div class="field"><label>Our target margin</label><input type="number" name="our_target_margin" step="any" value="{{ defaults.our_target_margin }}"></div>
+    </div>
+    <button type="submit" class="btn btn-primary">Save defaults</button>
+  </form>
+</div>
+{% endblock %}
