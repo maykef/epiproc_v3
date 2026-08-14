@@ -196,6 +196,7 @@ tr:hover td{background:rgba(108,124,255,.06);}
   <div class="tab" data-click="showPage" data-page="invoices">Invoices</div>
   <div class="tab" data-click="showPage" data-page="pricetracker">📈 Price Tracker</div>
   <div class="tab" data-click="showPage" data-page="reports" data-init="initReports" style="color:#f4a261">📊 Reports</div>
+  <div class="tab" data-click="showPage" data-page="costing" data-init="initCosting" style="color:#56cf8e">📐 Costing</div>
   <div class="nav-sep"></div>
   <button id="search-btn" data-click="openSearch" title="Semantic search (Ctrl+K)">
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -566,6 +567,11 @@ tr:hover td{background:rgba(108,124,255,.06);}
       </div>
     </div>
   </div>
+</div>
+
+<!-- COSTING ────────────────────────────────────────────────────────────────── -->
+<div id="page-costing" class="page">
+  <div id="costing-root"></div>
 </div>
 
 <script src="{{DATA_FILE}}"></script>

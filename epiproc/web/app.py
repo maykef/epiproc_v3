@@ -22,7 +22,7 @@ from epiproc import __version__
 from epiproc.db.pool import close_pool, init_pool, run_migrations
 from epiproc.settings import settings
 from epiproc.web.metrics import MetricsMiddleware, metrics_response
-from epiproc.web.routers import admin, dashboard, login, reset, usage
+from epiproc.web.routers import admin, costing, dashboard, login, reset, usage
 from epiproc.web.routers import health as health_router
 from epiproc.web.security import (
     AuditMiddleware,
@@ -81,6 +81,7 @@ app.mount(
 app.include_router(login.router)
 app.include_router(reset.router)
 app.include_router(admin.router)
+app.include_router(costing.router)
 app.include_router(dashboard.router)
 app.include_router(usage.router)
 app.include_router(health_router.router)
