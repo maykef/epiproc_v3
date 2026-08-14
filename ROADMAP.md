@@ -32,6 +32,16 @@ its own design + testing pass.
 
 ## Recently closed
 
+- **Per-unit product costing shipped to the live floral_portal instance**
+  (2026-08-14) — the costing module (migration 0009, admin calculator, read-only
+  customer Costing dashboard tab) was clone-tested against real data, merged to
+  master and deployed as `epiproc:3.0.0-50252f9`, with the Costing tab enabled on
+  the instance. The workbook's worked example was seeded (product "Roses", final
+  costing v1); all 18 pinned spreadsheet values — every intermediate and output —
+  match the stored costing to 1e-9, and the stored snapshot recomputes identically
+  from its inputs. See `docs/costing.md`. Remaining: the interactive "what-if"
+  playground (deferred pending the client) and invoice-derived input seeding
+  (longer term).
 - **Domain purge — engine made fully generic** — removed all lab/microscopy/
   research-institute code a reviewer could use to infer origins: the CUFS
   (Cambridge University Financial System) subsystem + hardcoded institutes in

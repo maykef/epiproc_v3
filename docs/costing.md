@@ -5,6 +5,11 @@ It computes the total direct cost of packing and distributing one selling unit o
 a product, and the resulting gross profit for us and for the customer, plus two
 reverse target-price solvers.
 
+**Status:** merged to master and deployed live to the floral_portal instance on
+2026-08-14 (`epiproc:3.0.0-50252f9`), Costing tab enabled. The workbook's worked
+example was seeded on the instance and verified: all 18 pinned spreadsheet values
+(every intermediate and output) match the stored costing to 1e-9.
+
 Like the rest of the engine it is data-free and per-instance: the schema ships in
 the shared image (migration `0009_costing.sql`); every product, price, and saved
 costing lives in the customer container's own Postgres.
