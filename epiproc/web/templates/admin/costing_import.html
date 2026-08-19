@@ -1,0 +1,36 @@
+{% extends "admin/base.html" %}
+{% block title %}Costing — import offer{% endblock %}
+{% block content %}
+<h1>Import offer workbook</h1>
+<p style="color:var(--muted);font-size:13px;margin-top:-4px">
+  Batch-import products and draft costings from a provider offer spreadsheet (.xlsx).
+  <a href="/admin/costing/products" style="color:var(--accent)">← Back to products</a>
+</p>
+
+<div class="card">
+  <h2>Upload</h2>
+  <form method="post" action="/admin/costing/import/preview" enctype="multipart/form-data">
+    <div class="field">
+      <label>Offer workbook (.xlsx, max 10 MB)</label>
+      <input type="file" name="file" accept=".xlsx" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Preview import</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>What the import does</h2>
+  <ul style="padding-left:18px;line-height:1.8;font-size:13px;color:var(--muted)">
+    <li>Reads per product row: name (B), EAN (C), pcs per tray / UPT (J), per-pallet layout (K),
+        box height (L) and the in-box on-pallet price (N). The CC price (M) is ignored.</li>
+    <li>Creates or updates one product per row, matched by EAN — else by exact name.
+        Selling/retail prices set in the calculator are never overwritten.</li>
+    <li>Computes a <b>draft</b> costing for every row with a UPT, a price and a matching box
+        type. Rows that can't be costed are flagged for attention — nothing is finalised
+        automatically.</li>
+    <li>Shared rates (transport, labour, margins) come from
+        <a href="/admin/costing/menus" style="color:var(--accent)">costing defaults &amp; menus</a>,
+        not from the sheet.</li>
+  </ul>
+</div>
+{% endblock %}

@@ -11,6 +11,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 from urllib.parse import parse_qs
 
@@ -28,6 +29,10 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 CSRF_COOKIE = "ds_csrf"
+
+# Multipart bodies carry the injected hidden _csrf field as:
+#   Content-Disposition: form-data; name="_csrf"\r\n\r\n<token>\r\n
+_CSRF_MULTIPART_RE = re.compile(rb'name="_csrf"\r\n\r\n([^\r\n]+)')
 
 _CSRF_SAFE = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 # Routes exempt from CSRF validation (pre-session or safe by other means).
@@ -80,6 +85,17 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 if "application/x-www-form-urlencoded" in ct:
                     form_data = parse_qs(body.decode("utf-8", errors="ignore"))
                     submitted = form_data.get("_csrf", [""])[0]
+                elif "multipart/form-data" in ct:
+                    # File uploads post as multipart, which parse_qs can't read.
+                    # The csrf_inject script appends the hidden _csrf field, so
+                    # extract its value with a bounded scan of the raw body
+                    # (name="_csrf" <CRLF><CRLF> <value> <CRLF>). The value is a
+                    # hex HMAC token — it can never contain CR/LF, and the check
+                    # below still compares it against the ds_csrf cookie, so a
+                    # forged field elsewhere in the body is not a bypass.
+                    m = _CSRF_MULTIPART_RE.search(body)
+                    if m:
+                        submitted = m.group(1).decode("utf-8", errors="ignore")
 
             if not submitted or not hmac.compare_digest(submitted, cookie_token):
                 return StarletteResponse("CSRF validation failed.", status_code=403)

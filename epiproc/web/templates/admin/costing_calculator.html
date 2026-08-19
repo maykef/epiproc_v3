@@ -1,6 +1,6 @@
 {% extends "admin/base.html" %}
 {% block title %}Costing — {{ product.name }}{% endblock %}
-{% macro money(v) %}{% if v is not none %}{{ '%.4f'|format(v) }}{% else %}—{% endif %}{% endmacro %}
+{% macro money(v) %}{% if v is not none %}{{ currency() }}{{ '%.4f'|format(v) }}{% else %}—{% endif %}{% endmacro %}
 {% macro pct(v) %}{% if v is not none %}{{ '%.2f'|format(v * 100) }}%{% else %}—{% endif %}{% endmacro %}
 {% macro num(v) %}{{ v if v is not none else '' }}{% endmacro %}
 {% block content %}
@@ -20,7 +20,7 @@
     </div>
     <div class="row row-2">
       <div class="field"><label>Selling price (ex VAT)</label><input type="number" name="selling_price" step="any" value="{{ num(f.selling_price) }}"></div>
-      <div class="field"><label>Retail price (inc VAT)</label><input type="number" name="retail_price" step="any" value="{{ num(f.retail_price) }}"></div>
+      <div class="field"><label>Customer price (inc VAT)</label><input type="number" name="retail_price" step="any" value="{{ num(f.retail_price) }}"></div>
     </div>
   </div>
 
@@ -54,7 +54,7 @@
       <thead><tr><th>Per-unit packaging</th><th>Unit cost</th><th>Qty</th></tr></thead>
       <tbody>
       {% for it in pack_unit_items %}
-        <tr><td>{{ it.name }}</td><td>{{ '%.4f'|format(it.unit_cost) }}</td>
+        <tr><td>{{ it.name }}</td><td>{{ money(it.unit_cost) }}</td>
             <td><input type="number" name="qty_{{ it.id }}" step="any" value="{{ it.qty }}" style="max-width:120px"></td></tr>
       {% endfor %}
       </tbody>
@@ -63,7 +63,7 @@
       <thead><tr><th>Per-case packaging (÷ UPT)</th><th>Unit cost</th><th>Qty</th></tr></thead>
       <tbody>
       {% for it in pack_case_items %}
-        <tr><td>{{ it.name }}</td><td>{{ '%.4f'|format(it.unit_cost) }}</td>
+        <tr><td>{{ it.name }}</td><td>{{ money(it.unit_cost) }}</td>
             <td><input type="number" name="qty_{{ it.id }}" step="any" value="{{ it.qty }}" style="max-width:120px"></td></tr>
       {% endfor %}
       </tbody>
@@ -78,7 +78,7 @@
       <select name="box_id">
         <option value="">— none —</option>
         {% for b in box_types %}
-          <option value="{{ b.id }}" {% if f.box_code and b.code == f.box_code %}selected{% endif %}>{{ b.code }} — {{ '%.4f'|format(b.price) }}</option>
+          <option value="{{ b.id }}" {% if f.box_code and b.code == f.box_code %}selected{% endif %}>{{ b.code }} — {{ currency() }}{{ '%.4f'|format(b.price) }}</option>
         {% endfor %}
       </select>
     </div>
@@ -86,7 +86,7 @@
       <thead><tr><th>Equipment</th><th>Unit cost</th><th>Qty</th></tr></thead>
       <tbody>
       {% for it in equipment_items %}
-        <tr><td>{{ it.name }}</td><td>{{ '%.4f'|format(it.unit_cost) }}</td>
+        <tr><td>{{ it.name }}</td><td>{{ money(it.unit_cost) }}</td>
             <td><input type="number" name="qty_{{ it.id }}" step="any" value="{{ it.qty }}" style="max-width:120px"></td></tr>
       {% endfor %}
       </tbody>
@@ -111,7 +111,7 @@
       <thead><tr><th>Labour</th><th>Unit cost</th><th>Qty</th></tr></thead>
       <tbody>
       {% for it in labour_items %}
-        <tr><td>{{ it.name }}</td><td>{{ '%.4f'|format(it.unit_cost) }}</td>
+        <tr><td>{{ it.name }}</td><td>{{ money(it.unit_cost) }}</td>
             <td><input type="number" name="qty_{{ it.id }}" step="any" value="{{ it.qty }}" style="max-width:120px"></td></tr>
       {% endfor %}
       </tbody>

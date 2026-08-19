@@ -18,10 +18,11 @@ costing lives in the customer container's own Postgres.
 
 | Layer | File | Responsibility |
 |---|---|---|
-| Migration | `epiproc/db/migrations/0009_costing.sql` | `products`, `box_types`, `cost_menu_items`, `costings` + seeds + `costing_defaults` setting |
+| Migration | `epiproc/db/migrations/0009_costing.sql`, `0010_costing_offer_defaults.sql`, `0011_costing_offer_imports.sql` | `products`, `box_types`, `cost_menu_items`, `costings` + seeds + `costing_defaults` setting (+ engine constants, `offer_imports` batch table) |
 | Pure calc | `epiproc/costing/calc.py` | pydantic input/result models + `compute()` — no I/O, no DB, no LLM |
-| DB | `epiproc/db/costing.py` | raw-SQL CRUD + versioned `save_costing` + dashboard read model |
-| HTTP/UI | `epiproc/web/routers/costing.py` + `templates/admin/costing_*.html` | admin master data + the calculator; customer-facing read-only tab |
+| Offer import | `epiproc/costing/offer_import.py` | offer-sheet parser, row→inputs mapping, batch driver (drafts only) |
+| DB | `epiproc/db/costing.py` | raw-SQL CRUD + versioned `save_costing` + `upsert_product_by_key` + dashboard read model |
+| HTTP/UI | `epiproc/web/routers/costing.py` + `templates/admin/costing_*.html` | admin master data + the calculator + the offer import wizard; customer-facing read-only tab |
 
 The separation is deliberate: all arithmetic is isolated in `calc.py` so it can be
 exhaustively unit-tested against the source workbook (`tests/test_costing_calc.py`,
@@ -110,17 +111,132 @@ lives in `routers/costing.py`, not in the reusable engine.
   calculator prefills from the latest saved version (else product + defaults),
   recomputes on **Calculate**, and persists a new version on **Save**.
 - **Dashboard → Costing tab** (customer-facing, read-only): each active product with
-  its latest *final* costing's total direct cost, selling price, our GP% and
-  customer GP%, plus an expandable per-product breakdown. The tab is registered in
+  its latest *final* costing's total direct cost and — immediately after it —
+  **our price** (total direct cost + 10% — the operator's pricing rule, derived
+  at read time from the stored result), then our GP%, customer GP%, and — as the
+  final column — the **customer price** (retail inc VAT, the price the customer's
+  own shelf shows), plus an expandable per-product breakdown. The tab is registered in
   `DASHBOARD_TABS`, so an admin toggles it per customer under Admin → Dashboard; on
   an instance whose visible-tabs were saved before this module shipped it is off
   until explicitly enabled. Data is inlined server-side (no unauthenticated JSON
   route); all product text is escaped on insert and the tab honours the nonce CSP.
+- **Currency** — every money cell across the costing surfaces (products, import
+  preview, menus, calculator, dashboard tab) carries the instance's currency
+  symbol. The symbol is per-customer data, not engine code: the existing
+  `settings.currency_symbol` (Admin → Dashboard) drives it through the Jinja
+  `currency()` global; the floral instance is set to `€`.
 
 The two surfaces are intentionally split: the dashboard tab **publishes** finalised
 costings (read-only), and editing lives in the admin calculator (a full-page
 recompute on each change). There is currently **no live, user-editable "what-if"
 sandbox** — see Future work.
+
+## Offer import (batch)
+
+The provider's "offer" workbook (one sheet of hand-typed product lines) can be
+imported in batches under **Admin → Costing → Import offer (.xlsx)**:
+upload → preview review table → confirm. The preview is a read-only dry run of the
+exact same code path, so what the review table shows is what confirm writes —
+including intra-batch product merges (two rows sharing one valid EAN become one
+created product + one update in the preview too, and the second row shows the
+first row's stored price).
+_Status: implemented on `feature/costing-offer-import` (2026-08-19); not yet
+deployed to live._
+
+**Column mapping** (letters as in the offer file):
+
+| Column | Letter | Use |
+|---|---|---|
+| Name | B | product name |
+| EAN/GTIN | C | product key when a valid 8/13-digit EAN |
+| Layers per cc | H | captured on the row, not used by the calc |
+| Trays per layer | I | captured on the row, not used by the calc |
+| Pcs per tray (UPT) | J | `products.units_per_tray` |
+| Per pallet | K | kept as raw text for display only |
+| Box height | L | first integer wins (`"48 cm"` → 48, `"20 / 25 cm"` → 20); resolves to the **smallest real box model the height fits into** (34/40/48/80 cm) |
+| Material cost | **N** | the material line's unit cost. Column M (CC price) is **deliberately ignored**, per the operator |
+
+Shared values never come from the sheet: all percentages and the inbound/outbound
+transport constants come from `costing_defaults` — migration `0010` adds the engine
+constants (`pallet_rate` 125, `boxes_per_cc` 252, `qty_per_box` 1, `price_per_pallet`
+50, `fill_rate` 0.8, `boxes_on_order` 24, `fuel_surcharge_pct` 0) to both fresh and
+already-migrated installs — box prices come from `box_types`, and menu items from
+`cost_menu_items` with the default selection Consumables (per case), Pack on line
+and Labelling; everything else (including Chep pallets and sleeves) off.
+
+`box_types` holds exactly the four `Бокс` models seeded by migration `0009`
+(34/40/48/80 cm). **The operator confirmed (2026-08-19) that no other box
+models exist** — the workbook's lookups sheet listed more (Модел 1/2/3), but
+those are not real. The offer import therefore maps **every** sheet height into
+the smallest of the four models it fits into (`20` → 34, `35` → 40, `60` → 80,
+…); only a height taller than 80 cm is unresolvable and flags the row for
+attention. Box prices are the real 0009 prices — no placeholders, no imaginary
+data.
+
+**Results without manual steps** — the preview and the products list show each
+row as the original sheet did: **direct cost → profit → total (selling price)**,
+plus the auto retail price and the customer GP%. The selling price is the
+product's stored one when it has one (an admin-set price, or a price from an
+earlier import, always wins); otherwise the import auto-sets it from the
+target-margin formula (`direct cost ÷ (1 − our_target_margin)`, rounded to 2dp —
+the workbook's "Target FP", with the seeded 10% margin). The retail price works
+the same way: a stored retail wins; otherwise the import auto-sets it from the
+workbook's Target Retail formula (`selling ÷ (1 − customer_target_margin) ×
+(1 + vat_rate)`, rounded to 2dp — seeded 35% / 20%, the sheet's "7.35 €" cell
+for the Roses example), which also fills the customer GP% column (on our price,
+workbook fidelity). The chosen prices are written into the saved `inputs`
+snapshot, so a costing always records exactly what it computed against.
+
+**Dashboard "Our Price" vs the stored selling** — the customer-facing Costing
+tab shows **Our Price** = total direct cost + 10% (the operator's pricing rule,
+derived at read time) immediately after the total cost; the stored selling price
+is deliberately not shown on that tab. The stored/auto selling (÷ 0.9) and Our
+Price (× 1.1) therefore differ by ~1%: the admin surfaces (products list, import
+preview) keep the stored/auto selling, and only the dashboard applies the +10%
+display rule.
+
+**Each upload is a saved version** — one confirmed upload writes one row in
+`offer_imports` (migration `0011`: filename, actor, row/created/updated/costing
+counts + the bulk-finalise flag) and archives the uploaded workbook as `data_dir/imports/offer_<id>_<filename>`
+(the file is staged at preview time under a server-chosen `.staging_` name and
+renamed on confirm; staging files older than 24 h are pruned). Per-product
+costings keep their own per-import version bump, so both batch-level and
+product-level history exist.
+
+**Invariants**
+
+- **Never auto-finalises** — every imported costing is a `draft` for admin
+  review, unless the admin ticks the preview's **bulk-finalise checkbox** (an
+  explicit opt-in at confirm: those costings save directly as `final` and the
+  batch row records `finalised=true`). Drafts by default, always. Batch approval
+  lives **only** at confirm time on the preview screen; there is no post-import
+  approval page (a "Batches" list with an Approve button was offered to the
+  operator on 2026-08-19, not yet built).
+- **Idempotent re-imports** — a row keys to an existing product by valid EAN, else
+  exact name; re-importing updates the same product and adds a NEW draft version
+  (never duplicate products). An update never clobbers an admin-set selling/retail
+  price, nor a stored UPT when the offer row's UPT is missing.
+- **One transaction per import** — a mid-batch failure rolls back everything
+  (products, costings, the `offer_imports` row).
+- Rows that can't be costed (missing UPT / price / box height, or a height with no
+  matching `box_types` row) still import as products — without a selling price,
+  since the auto-target needs a direct cost — and are flagged **attention** in the
+  preview; adding the missing box type under Costing menus and re-importing then
+  creates their draft costings.
+
+**Known data-quality caveats** (the file is hand-maintained and the provider says
+the format will change between batches): EAN coverage is partial and rows can share
+one — a duplicate valid EAN within a batch is flagged rather than silently merged;
+junk-length EANs (a `#VALUE!` spill or a partial barcode) are flagged and **never
+persisted**, so two products can't collide on the `products.ean` UNIQUE constraint;
+column K is informational and varies in format. Sheet text is untrusted input: it is
+only ever re-emitted through Jinja auto-escaping (nonce CSP), the confirm step
+re-validates the stashed rows server-side, and every confirmed import is
+audit-logged (`costing_offer_import` with filename + batch id + archived file +
+counts).
+
+Per-product sleeve/packaging refinement (e.g. sleeve by stem length) is deferred:
+imports use the default selection above; refine a draft in the calculator.
 
 ## Future work
 

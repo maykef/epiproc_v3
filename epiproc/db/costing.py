@@ -19,9 +19,10 @@ from typing import Any
 from epiproc.db.pool import pool
 from epiproc.db.settings import get_setting, set_setting
 
-# Fallback used when the settings row is absent (mirrors the 0009 seed). The
-# migration seeds this row on a fresh DB; the fallback keeps callers working on a
-# DB migrated before the row existed.
+# Fallback used when the settings row is absent (mirrors the 0009/0010 seeds).
+# The migrations seed this row on a fresh DB; the fallback keeps callers working
+# on a DB migrated before the row existed (and supplies the engine constants the
+# offer import shares across products — see offer_import.build_inputs).
 DEFAULT_COSTING_DEFAULTS: dict[str, float] = {
     "vat_rate": 0.20,
     "eur_rate": 1.0,
@@ -31,6 +32,14 @@ DEFAULT_COSTING_DEFAULTS: dict[str, float] = {
     "additional_pct": 0.10,
     "customer_target_margin": 0.35,
     "our_target_margin": 0.10,
+    # Engine constants (roses-sheet values), shared by every imported product.
+    "pallet_rate": 125,
+    "boxes_per_cc": 252,
+    "qty_per_box": 1,
+    "price_per_pallet": 50,
+    "fill_rate": 0.8,
+    "boxes_on_order": 24,
+    "fuel_surcharge_pct": 0,
 }
 
 _SETTINGS_KEY = "costing_defaults"
@@ -92,10 +101,27 @@ def get_product(product_id: int) -> dict | None:
     return _row(row)
 
 
-def get_product_by_ean(ean: str) -> dict | None:
-    with pool().connection() as conn:
+def get_product_by_ean(ean: str, conn=None) -> dict | None:  # noqa: ANN001
+    if conn is not None:
         row = conn.execute("SELECT * FROM products WHERE ean = %s", (ean,)).fetchone()
-    return _row(row)
+        return _row(row)
+    with pool().connection() as c:
+        row = c.execute("SELECT * FROM products WHERE ean = %s", (ean,)).fetchone()
+        return _row(row)
+
+
+def get_product_by_name(name: str, conn=None) -> dict | None:  # noqa: ANN001
+    """First product with this exact name (products.name is not unique)."""
+    if conn is not None:
+        row = conn.execute(
+            "SELECT * FROM products WHERE name = %s ORDER BY id LIMIT 1", (name,),
+        ).fetchone()
+        return _row(row)
+    with pool().connection() as c:
+        row = c.execute(
+            "SELECT * FROM products WHERE name = %s ORDER BY id LIMIT 1", (name,),
+        ).fetchone()
+        return _row(row)
 
 
 def upsert_product(
@@ -141,6 +167,86 @@ def upsert_product(
             (fields["name"], fields["ean"], fields["units_per_tray"],
              fields["retail_price"], fields["selling_price"], fields["active"]),
         ).fetchone()
+    return row["id"]
+
+
+def find_product_by_key(name: str, ean: str | None, conn=None) -> dict | None:  # noqa: ANN001
+    """The offer import's product key: a valid (8/13-digit) EAN when the row has
+    one, else the exact name. Suspect-length EANs are never persisted at all
+    (products.ean is UNIQUE and junk must never merge distinct products) — the
+    driver surfaces them as warnings only."""
+    key_ean = ean if (ean and len(ean) in (8, 13)) else None
+    existing = get_product_by_ean(key_ean, conn=conn) if key_ean else None
+    if existing is None:
+        existing = get_product_by_name(name.strip(), conn=conn)
+    return existing
+
+
+def upsert_product_by_key(
+    name: str,
+    ean: str | None,
+    units_per_tray: int | None,
+    conn,  # noqa: ANN001 — caller's transaction (offer import batches in one)
+    selling_price: float | None = None,
+    retail_price: float | None = None,
+) -> tuple[int, bool]:
+    """Upsert for the offer import (keying per :func:`find_product_by_key`).
+    Unlike :func:`upsert_product`, an update only touches name/ean/UPT —
+    prices set by an admin survive a re-import. ``selling_price``/``retail_price``
+    (the import's auto-target prices) are COALESCE'd so a stored price — set by
+    an admin, or from an earlier import — always wins. ``ean`` is only written
+    on create or when the offer row has one (a blank offer EAN never wipes a
+    stored one). Returns (product_id, created)."""
+    name = name.strip()
+    existing = find_product_by_key(name, ean, conn=conn)
+
+    if existing is not None:
+        # units_per_tray and the auto prices are COALESCE'd so a re-import row
+        # with a missing UPT never clobbers a previously imported value, and an
+        # auto price never overwrites a stored one.
+        conn.execute(
+            """UPDATE products
+               SET name=%s, units_per_tray=COALESCE(%s, units_per_tray),
+                   updated_at=now(), ean=COALESCE(%s, ean),
+                   selling_price=COALESCE(selling_price, %s),
+                   retail_price=COALESCE(retail_price, %s)
+               WHERE id=%s""",
+            (name, units_per_tray, ean or None, selling_price, retail_price,
+             existing["id"]),
+        )
+        return existing["id"], False
+
+    row = conn.execute(
+        """INSERT INTO products
+           (name, ean, units_per_tray, selling_price, retail_price, active)
+           VALUES (%s, %s, %s, %s, %s, TRUE) RETURNING id""",
+        (name, ean or None, units_per_tray or 1, selling_price, retail_price),
+    ).fetchone()
+    return row["id"], True
+
+
+def record_offer_import(
+    filename: str,
+    uploaded_by: str,
+    row_count: int,
+    products_created: int,
+    products_updated: int,
+    costings_created: int,
+    skipped: int,
+    conn,  # noqa: ANN001 — caller's transaction (one import = one batch row)
+    finalised: bool = False,
+) -> int:
+    """One row per confirmed offer upload — each upload is a saved version of
+    the product/costing set (migration 0011). ``finalised`` records whether the
+    wizard's bulk-finalise checkbox was ticked. Returns the batch id."""
+    row = conn.execute(
+        """INSERT INTO offer_imports
+           (filename, uploaded_by, row_count, products_created, products_updated,
+            costings_created, skipped, finalised)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+        (filename, uploaded_by, row_count, products_created, products_updated,
+         costings_created, skipped, finalised),
+    ).fetchone()
     return row["id"]
 
 
@@ -256,6 +362,7 @@ def save_costing(
     results: dict,
     created_by: str | None = None,
     status: str = "draft",
+    conn=None,  # noqa: ANN001 — caller's transaction (offer import batches in one)
 ) -> dict:
     """Persist a costing as the next version for a product. ``inputs``/``results``
     are the fully-resolved snapshots (see calc / router). Version assignment is a
@@ -264,8 +371,20 @@ def save_costing(
     Returns {id, version}."""
     if status not in ("draft", "final"):
         raise ValueError(f"invalid costing status: {status!r}")
-    with pool().connection() as conn:
+    if conn is not None:
         row = conn.execute(
+            """INSERT INTO costings (product_id, version, status, inputs, results, created_by)
+               VALUES (
+                   %s,
+                   (SELECT COALESCE(MAX(version), 0) + 1 FROM costings WHERE product_id = %s),
+                   %s, %s::jsonb, %s::jsonb, %s)
+               RETURNING id, version""",
+            (product_id, product_id, status,
+             json.dumps(inputs), json.dumps(results), created_by),
+        ).fetchone()
+        return {"id": row["id"], "version": row["version"]}
+    with pool().connection() as c:
+        row = c.execute(
             """INSERT INTO costings (product_id, version, status, inputs, results, created_by)
                VALUES (
                    %s,
@@ -319,6 +438,7 @@ def get_costing_dashboard_data() -> dict:
     for p in products:
         latest = get_latest_costing(p["id"], status="final")
         results = latest["results"] if latest else None
+        total_cost = (results or {}).get("total_direct_cost")
         rows.append({
             "id": p["id"],
             "name": p["name"],
@@ -326,7 +446,11 @@ def get_costing_dashboard_data() -> dict:
             "selling_price": p.get("selling_price"),
             "retail_price": p.get("retail_price"),
             "version": latest["version"] if latest else None,
-            "total_direct_cost": (results or {}).get("total_direct_cost"),
+            "total_direct_cost": total_cost,
+            # Our price = total direct cost + 10% (the operator's pricing rule).
+            # Derived at read time from the stored result, like the other
+            # headline figures — no new stored field, calc untouched.
+            "our_price": round(total_cost * 1.10, 4) if total_cost is not None else None,
             "our_gp": (results or {}).get("our_gp"),
             "our_gp_pct": (results or {}).get("our_gp_pct"),
             "customer_gp_pct": (results or {}).get("customer_gp_pct"),
