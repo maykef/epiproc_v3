@@ -43,7 +43,8 @@ def test_0009_created_tables_and_seeds(migrated_db):
     from epiproc.db import costing as db
 
     boxes = db.list_box_types()
-    assert len(boxes) == 4                       # only the coded rows are seeded
+    # 0009 seeds exactly the 4 'Бокс' models — the operator confirmed
+    # (2026-08-19) that no other box models exist.
     assert {b["code"] for b in boxes} == {"Бокс 34см", "Бокс 40см", "Бокс 48см", "Бокс 80см"}
 
     items = db.list_menu_items()
@@ -147,3 +148,5 @@ def test_save_costing_round_trip_and_recompute(migrated_db):
     dash = db.get_costing_dashboard_data()
     row = next(r for r in dash["products"] if r["id"] == pid)
     assert abs(row["total_direct_cost"] - results["total_direct_cost"]) < 1e-9
+    # Our price is derived: total direct cost + 10% (the operator's rule).
+    assert row["our_price"] == round(results["total_direct_cost"] * 1.10, 4)

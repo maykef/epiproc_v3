@@ -240,17 +240,18 @@ def _tab_toggle_js() -> str:
     )
 
 
-def _costing_dashboard_script() -> str:
+def _costing_dashboard_script(sym: str) -> str:
     """Customer-facing 'Costing' tab: inline the read-only costing snapshot data
     and a pure-DOM renderer. Data is embedded via _js_json (script-context safe);
     all product-derived text is escaped on insert (no inline handlers — the tab is
     lazily initialised by the nav's data-init="initCosting"). Guarded so an old DB
     without the costing tables never breaks the dashboard."""
     try:
-        from epiproc.db.costing import get_costing_dashboard_data
+        from epiproc.db.costing import get_costing_dashboard_data, get_offer_history_data
         data = get_costing_dashboard_data()
+        data.update(get_offer_history_data())
     except Exception:  # noqa: BLE001 — costing tables may be absent on an old DB
-        data = {"products": []}
+        data = {"products": [], "offers": []}
     return (
         "<script>\n"
         f"window.COSTING_DATA = {_js_json(data)};\n"
@@ -259,24 +260,28 @@ def _costing_dashboard_script() -> str:
         "  if(!root||root.dataset.done==='1')return; root.dataset.done='1';\n"
         "  var M={'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'};\n"
         "  function esc(s){return (s==null?'':String(s)).replace(/[&<>\"']/g,function(c){return M[c];});}\n"
-        "  function money(v){return v==null?'\\u2014':Number(v).toFixed(4);}\n"
+        f"  function money(v){{return v==null?'\\u2014':'{sym}'+Number(v).toFixed(4);}}\n"
         "  function pct(v){return v==null?'\\u2014':(Number(v)*100).toFixed(2)+'%';}\n"
+        f"  function money2(v){{return v==null?'\\u2014':'{sym}'+Number(v).toFixed(2);}}\n"
+        "  function fmtDate(s){if(!s)return '\\u2014';var d=new Date(s);"
+        "return isNaN(d)?String(s):d.toLocaleString();}\n"
         "  var D=(window.COSTING_DATA&&window.COSTING_DATA.products)||[];\n"
         "  if(!D.length){root.innerHTML='<div class=\"card\"><p style=\"color:var(--muted)\">"
         "No final costings yet. An administrator creates them under Admin \\u2192 Costing.</p></div>';return;}\n"
         "  var h='<div class=\"card\"><h2>Product costing (latest final version)</h2>"
-        "<table><thead><tr><th>Product</th><th>EAN</th><th>Selling</th>"
-        "<th>Total cost</th><th>Our GP%</th><th>Customer GP%</th></tr></thead><tbody>';\n"
+        "<table><thead><tr><th>Product</th><th>EAN</th>"
+        "<th>Total cost</th><th>Our Price</th><th>Our GP%</th><th>Customer GP%</th><th>Customer price</th></tr></thead><tbody>';\n"
         "  D.forEach(function(p){\n"
         "    h+='<tr><td>'+esc(p.name)+(p.version==null?' <span style=\\\"color:var(--muted)\\\">(no final costing)</span>':' <span style=\\\"color:var(--muted)\\\">v'+esc(p.version)+'</span>')+'</td>'\n"
         "      +'<td style=\\\"color:var(--muted)\\\">'+esc(p.ean||'\\u2014')+'</td>'\n"
-        "      +'<td>'+money(p.selling_price)+'</td>'\n"
         "      +'<td>'+money(p.total_direct_cost)+'</td>'\n"
+        "      +'<td>'+money(p.our_price)+'</td>'\n"
         "      +'<td>'+pct(p.our_gp_pct)+'</td>'\n"
-        "      +'<td>'+pct(p.customer_gp_pct)+'</td></tr>';\n"
+        "      +'<td>'+pct(p.customer_gp_pct)+'</td>'\n"
+        "      +'<td>'+money(p.retail_price)+'</td></tr>';\n"
         "    var r=p.results;\n"
         "    if(r){\n"
-        "      h+='<tr><td colspan=\\\"6\\\"><details><summary style=\\\"cursor:pointer;color:var(--accent)\\\">Breakdown</summary>'\n"
+        "      h+='<tr><td colspan=\\\"7\\\"><details><summary style=\\\"cursor:pointer;color:var(--accent)\\\">Breakdown</summary>'\n"
         "        +'<table style=\\\"margin-top:8px\\\"><tbody>'\n"
         "        +'<tr><td>Raw materials</td><td style=\\\"text-align:right\\\">'+money(r.raw_materials)+'</td></tr>'\n"
         "        +'<tr><td>Packaging &amp; equipment</td><td style=\\\"text-align:right\\\">'+money(r.pkg_equip_total)+'</td></tr>'\n"
@@ -290,6 +295,35 @@ def _costing_dashboard_script() -> str:
         "    }\n"
         "  });\n"
         "  h+='</tbody></table></div>';\n"
+        "  var OF=(window.COSTING_DATA&&window.COSTING_DATA.offers)||[];\n"
+        "  if(OF.length){\n"
+        "    var o='<div class=\"card\"><h2>Offer history</h2>"
+        "<p style=\"color:var(--muted);margin-top:-4px\">Each supplier offer, newest first. "
+        "Open one to see the prices it recorded.</p>';\n"
+        "    OF.forEach(function(f){\n"
+        "      o+='<details style=\"border-top:1px solid var(--line);padding:8px 0\">'\n"
+        "        +'<summary style=\"cursor:pointer\"><strong>'+esc(fmtDate(f.uploaded_at))+'</strong>'\n"
+        "        +' <span style=\"color:var(--muted)\">'+esc(f.filename||'')+'</span>'\n"
+        "        +' <span style=\"color:var(--muted)\">\\u2014 '+esc(f.costing_count)+' products'\n"
+        "        +(f.finalised?', final':', draft')+'</span></summary>';\n"
+        "      var it=f.items||[];\n"
+        "      if(!it.length){o+='<p style=\"color:var(--muted)\">No prices recorded.</p>';}\n"
+        "      else{\n"
+        "        o+='<table style=\"margin-top:8px\"><thead><tr><th>Product</th><th>EAN</th>'\n"
+        "          +'<th>Total cost</th><th>Selling</th><th>Customer price</th></tr></thead><tbody>';\n"
+        "        it.forEach(function(r){\n"
+        "          o+='<tr><td>'+esc(r.name)+' <span style=\"color:var(--muted)\">v'+esc(r.version)+'</span></td>'\n"
+        "            +'<td style=\"color:var(--muted)\">'+esc(r.ean||'\\u2014')+'</td>'\n"
+        "            +'<td>'+money2(r.total_cost)+'</td>'\n"
+        "            +'<td>'+money2(r.selling_price)+'</td>'\n"
+        "            +'<td>'+money2(r.retail_price)+'</td></tr>';\n"
+        "        });\n"
+        "        o+='</tbody></table>';\n"
+        "      }\n"
+        "      o+='</details>';\n"
+        "    });\n"
+        "    h+=o+'</div>';\n"
+        "  }\n"
         "  root.innerHTML=h;\n"
         "}\n"
         "</script>"
@@ -337,14 +371,15 @@ def _data_quality_banner() -> str:
 def _apply(template: str, subs: dict) -> str:
     for k, v in subs.items():
         template = template.replace(k, v)
+    # Currency symbol is per-customer (the template hardcodes £). Applied after
+    # substitutions so injected values (e.g. the header grand total) convert too;
+    # the costing tab's script embeds it directly.
+    from epiproc.db.settings import get_currency_symbol, get_enabled_tabs, get_price_tracker_key
+    sym = get_currency_symbol()
     template = template.replace("</nav>", _LOGOUT_BTN, 1)
     template = template.replace("{{INSTITUTION}}", settings.institution)
     template = template.replace("{{DATA_QUALITY}}", _data_quality_banner())
-    template = template.replace("</body>", _costing_dashboard_script() + _tab_toggle_js() + "</body>", 1)
-    # Currency symbol is per-customer (the template hardcodes £). Applied after
-    # substitutions so injected values (e.g. the header grand total) convert too.
-    from epiproc.db.settings import get_currency_symbol, get_enabled_tabs, get_price_tracker_key
-    sym = get_currency_symbol()
+    template = template.replace("</body>", _costing_dashboard_script(sym) + _tab_toggle_js() + "</body>", 1)
     if sym != "£":
         template = template.replace("£", sym)
     template = template.replace(

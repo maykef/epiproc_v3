@@ -13,10 +13,16 @@ reproducible and immune to later edits of the reference tables.
 """
 from __future__ import annotations
 
+import json
+import secrets
+import time
+from pathlib import Path
 from urllib.parse import quote
+from zipfile import BadZipFile
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from openpyxl.utils.exceptions import InvalidFileException
 
 from epiproc.costing.calc import (
     BoxSelection,
@@ -28,7 +34,9 @@ from epiproc.costing.calc import (
     PackagingPcts,
     compute,
 )
+from epiproc.costing.offer_import import OfferRow, parse_offer, run_offer_import
 from epiproc.db import costing as db
+from epiproc.settings import settings
 from epiproc.web.security import _request_ip, audit_log
 from epiproc.web.session import get_session_user
 from epiproc.web.templates import templates
@@ -95,11 +103,17 @@ def costing_home(request: Request):
 def products_page(request: Request, ok: str = "", err: str = ""):
     me = _admin(request)
     products = db.list_products()
-    # Annotate with the latest final costing's headline cost for the list view.
+    # Annotate with the latest costing regardless of status: drafts are the
+    # freshly imported results and must show here immediately (the status badge
+    # says whether an admin has finalised them yet).
     for p in products:
-        latest = db.get_latest_costing(p["id"], status="final")
+        latest = db.get_latest_costing(p["id"])
         p["latest_version"] = latest["version"] if latest else None
+        p["latest_status"] = latest["status"] if latest else None
         p["latest_cost"] = (latest["results"] or {}).get("total_direct_cost") if latest else None
+        p["latest_gp"] = (latest["results"] or {}).get("our_gp") if latest else None
+        p["latest_customer_gp_pct"] = (
+            (latest["results"] or {}).get("customer_gp_pct") if latest else None)
     return templates.TemplateResponse(request, "admin/costing_products.html", {
         "me": me["username"],
         "products": products,
@@ -419,3 +433,150 @@ async def calculator_save(request: Request, product_id: int):
     ctx["flash_msg"] = f"Saved version {saved['version']} ({status})."
     ctx["flash_kind"] = "ok"
     return templates.TemplateResponse(request, "admin/costing_calculator.html", ctx)
+
+
+# ── Offer-sheet batch import ─────────────────────────────────────────────────
+#
+# Three steps, mirroring the phase-1 flow: GET /import shows the upload form;
+# POST /import/preview parses + dry-runs (writes nothing) and renders the review
+# table; POST /import/confirm re-validates the stashed rows server-side and runs
+# the real import in ONE transaction. The parsed rows travel as a JSON payload
+# in a hidden textarea — sheet text is untrusted input, so it is only ever
+# re-emitted through Jinja's auto-escape, and the confirm step never trusts the
+# payload blindly (every dict is re-validated into an OfferRow).
+
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # offer workbooks are ~9 MB (embedded photos)
+
+_IMPORTS_DIR = Path(settings.data_dir) / "imports"
+
+
+def _stage_upload(data: bytes, filename: str) -> str:
+    """Stash the uploaded workbook on disk under a server-chosen name so the
+    confirm step can archive it as the batch's file (one upload = one saved
+    version). Returns the staging name ("" when there is nothing to stash)."""
+    if not data:
+        return ""
+    _IMPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    name = f".staging_{secrets.token_hex(8)}_{Path(filename).name}"
+    (_IMPORTS_DIR / name).write_bytes(data)
+    # Opportunistically drop stale staging files (uploads never confirmed).
+    cutoff = time.time() - 86400
+    for p in _IMPORTS_DIR.glob(".staging_*"):
+        try:
+            if p.stat().st_mtime < cutoff:
+                p.unlink()
+        except OSError:
+            pass
+    return name
+
+
+@router.get("/admin/costing/import")
+def import_page(request: Request, ok: str = "", err: str = ""):
+    me = _admin(request)
+    return templates.TemplateResponse(request, "admin/costing_import.html", {
+        "me": me["username"],
+        "flash_msg": ok or err,
+        "flash_kind": "ok" if ok else ("err" if err else ""),
+    })
+
+
+def _import_form_error(request: Request, me: dict, msg: str):
+    return templates.TemplateResponse(request, "admin/costing_import.html", {
+        "me": me["username"], "flash_msg": msg, "flash_kind": "err",
+    }, status_code=422)
+
+
+@router.post("/admin/costing/import/preview")
+async def import_preview(request: Request):
+    me = _admin(request)
+    form = await request.form()
+    upload = form.get("file")
+    if upload is None or not getattr(upload, "filename", ""):
+        return _import_form_error(request, me, "No file selected.")
+    filename = upload.filename
+    if not filename.lower().endswith(".xlsx"):
+        return _import_form_error(request, me, "Only .xlsx offer workbooks are accepted.")
+    size = getattr(upload, "size", None)
+    if size and size > _MAX_UPLOAD_BYTES:
+        return _import_form_error(request, me, "Upload too large (max 10 MB).")
+    data = await upload.read()
+    if len(data) > _MAX_UPLOAD_BYTES:
+        return _import_form_error(request, me, "Upload too large (max 10 MB).")
+    try:
+        rows = parse_offer(data)
+    except (BadZipFile, InvalidFileException, KeyError, IndexError, OSError, ValueError) as exc:
+        return _import_form_error(request, me, f"Could not read that workbook: {exc}")
+    if not any(r.name for r in rows):
+        return _import_form_error(request, me, "No product rows detected in that workbook.")
+    report = run_offer_import(rows, actor=me["username"], dry_run=True, source=filename)
+    attention = sum(1 for r in report.rows if r.status == "attention")
+    return templates.TemplateResponse(request, "admin/costing_import_preview.html", {
+        "me": me["username"],
+        "filename": filename,
+        "report": report,
+        "attention": attention,
+        "staging_name": _stage_upload(data, filename),
+        "payload_json": json.dumps([r.model_dump(mode="json") for r in rows]),
+    })
+
+
+@router.post("/admin/costing/import/confirm")
+async def import_confirm(request: Request):
+    me = _admin(request)
+    form = await request.form()
+    filename = (form.get("filename") or "offer.xlsx").strip() or "offer.xlsx"
+    payload_raw = form.get("payload") or ""
+    try:
+        data = json.loads(payload_raw)
+        if not isinstance(data, list):
+            raise ValueError("payload is not a list")
+        rows = [OfferRow(**d) for d in data]
+    except (ValueError, TypeError):
+        return RedirectResponse(
+            "/admin/costing/import?err="
+            + _enc("Invalid import payload — please re-upload the workbook."),
+            status_code=303)
+    if not any(r.name for r in rows):
+        return RedirectResponse(
+            "/admin/costing/import?err="
+            + _enc("No product rows in that payload — please re-upload."),
+            status_code=303)
+    staging_name = (form.get("staging") or "").strip()
+    staging_path = None
+    if (staging_name.startswith(".staging_")
+            and Path(staging_name).name == staging_name):  # no path traversal
+        staging_path = _IMPORTS_DIR / staging_name
+    finalised = form.get("finalise") in ("1", "on", "true")
+    try:
+        report = run_offer_import(
+            rows, actor=me["username"], dry_run=False, source=filename,
+            finalise=finalised)
+    except Exception as exc:  # noqa: BLE001 — the run's transaction already rolled back
+        if staging_path is not None:
+            staging_path.unlink(missing_ok=True)
+        return RedirectResponse(
+            "/admin/costing/import?err=" + _enc(f"Import failed, nothing was saved: {exc}"),
+            status_code=303)
+    archived = ""
+    if staging_path is not None and staging_path.is_file() and report.batch_id:
+        archived = f"offer_{report.batch_id}_{Path(filename).name}"
+        staging_path.replace(_IMPORTS_DIR / archived)   # one upload = one saved file
+    elif staging_path is not None:
+        staging_path.unlink(missing_ok=True)
+    _audit(request, me, "costing_offer_import", {
+        "filename": filename,
+        "batch_id": report.batch_id,
+        "archived_file": archived,
+        "products_created": report.products_created,
+        "products_updated": report.products_updated,
+        "costings_created": report.costings_created,
+        "skipped": report.skipped,
+        "finalised": finalised,
+    })
+    attention = sum(1 for r in report.rows if r.status == "attention")
+    total_products = report.products_created + report.products_updated
+    status_word = "final" if finalised else "draft"
+    msg = (f"Import complete: {total_products} products, "
+           f"{report.costings_created} {status_word} costings, {attention} need attention. "
+           f"Saved as batch #{report.batch_id}.")
+    return RedirectResponse(f"/admin/costing/products?ok={_enc(msg)}", status_code=303)

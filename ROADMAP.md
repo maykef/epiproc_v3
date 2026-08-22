@@ -32,6 +32,29 @@ its own design + testing pass.
 
 ## Recently closed
 
+- **Offer-sheet batch import built and mock-verified** (2026-08-19, branch
+  `feature/costing-offer-import`, not yet deployed) — Admin → Costing → Import
+  offer (.xlsx): upload → dry-run preview → confirm, one transaction per import,
+  idempotent re-imports keyed by valid EAN (else exact name), one `offer_imports`
+  row + archived workbook per upload, per-product versioned costings — always
+  **draft** unless the admin ticks the preview's **bulk-finalise checkbox**.
+  Column mapping per the operator: B name, C EAN, J UPT, L box height (first
+  integer → smallest real box model it fits, 34/40/48/80), **N** material cost
+  (column M deliberately ignored), K display only; shared constants from
+  `costing_defaults` (migration 0010). Rows without stored prices get auto
+  selling = direct ÷ 0.9 (Target FP) and auto retail = selling ÷ 0.65 × 1.2
+  (Target Retail) — filling customer GP% with zero manual steps; stored prices
+  always win. Dashboard Costing tab columns finalised per the operator:
+  Total cost, then **Our Price** (cost + 10%, derived), Our GP%, Customer GP%,
+  **Customer price** (retail inc VAT) last — no "Selling" column on the tab —
+  and every costing money cell renders the instance's `settings.currency_symbol`
+  (€ on the demo, Jinja `currency()` global). Tests: offer parser + box
+  resolution units, costing integration additions (84 tests with the PG DSN).
+  Full E2E green twice on the costingdemo mock (draft run + bulk-finalise run).
+  Known data-quality flag: the real offer file's rows 8/10 share barcode
+  8713626094170 (two different Chrysanthemums) — flagged `duplicate_ean`, the
+  operator should fix one. Awaiting operator approval of the mock before baking
+  into `epiproc:3`.
 - **Per-unit product costing shipped to the live floral_portal instance**
   (2026-08-14) — the costing module (migration 0009, admin calculator, read-only
   customer Costing dashboard tab) was clone-tested against real data, merged to

@@ -1,10 +1,12 @@
 {% extends "admin/base.html" %}
 {% block title %}Costing — products{% endblock %}
 {% block content %}
+{% macro money(v) %}{% if v is not none %}{{ currency() }}{{ '%.4f'|format(v) }}{% else %}—{% endif %}{% endmacro %}
 <h1>Product costing</h1>
 <p style="color:var(--muted);font-size:13px;margin-top:-4px">
   Product master data for the per-unit costing calculator. Admin-only.
   <a href="/admin/costing/menus" style="color:var(--accent)">Edit menus, box types &amp; defaults →</a>
+  <a href="/admin/costing/import" style="color:var(--accent)">Import offer (.xlsx) →</a>
 </p>
 
 <div class="card">
@@ -18,7 +20,7 @@
     </div>
     <div class="row row-3">
       <div class="field"><label>Selling price (ex VAT)</label><input type="number" name="selling_price" step="any"></div>
-      <div class="field"><label>Retail price (inc VAT)</label><input type="number" name="retail_price" step="any"></div>
+      <div class="field"><label>Customer price (inc VAT)</label><input type="number" name="retail_price" step="any"></div>
       <div class="field"><label>Active</label><input type="checkbox" name="active" checked style="width:auto"></div>
     </div>
     <button type="submit" class="btn btn-primary">Add product</button>
@@ -32,8 +34,8 @@
   {% else %}
   <table>
     <thead><tr>
-      <th>Name</th><th>EAN</th><th>UPT</th><th>Selling</th><th>Retail</th>
-      <th>Latest cost</th><th></th>
+      <th>Name</th><th>EAN</th><th>UPT</th><th>Selling</th><th>Customer price</th>
+      <th>Latest cost</th><th>Profit</th><th>Cust GP%</th><th></th>
     </tr></thead>
     <tbody>
     {% for p in products %}
@@ -41,13 +43,18 @@
         <td>{{ p.name }}{% if not p.active %} <span class="badge badge-err">inactive</span>{% endif %}</td>
         <td style="color:var(--muted)">{{ p.ean or '—' }}</td>
         <td>{{ p.units_per_tray }}</td>
-        <td>{{ '%.4f'|format(p.selling_price) if p.selling_price is not none else '—' }}</td>
-        <td>{{ '%.4f'|format(p.retail_price) if p.retail_price is not none else '—' }}</td>
+        <td>{{ money(p.selling_price) }}</td>
+        <td>{{ money(p.retail_price) }}</td>
         <td>
           {% if p.latest_cost is not none %}
-            {{ '%.4f'|format(p.latest_cost) }} <span style="color:var(--muted)">(v{{ p.latest_version }})</span>
+            {{ money(p.latest_cost) }}
+            <span style="color:var(--muted)">(v{{ p.latest_version }}
+              {% if p.latest_status == 'final' %}<span class="badge badge-ok">final</span>
+              {% else %}<span class="badge badge-warn">draft</span>{% endif %})</span>
           {% else %}<span style="color:var(--muted)">—</span>{% endif %}
         </td>
+        <td>{{ money(p.latest_gp) }}</td>
+        <td>{{ '%.2f%%'|format(p.latest_customer_gp_pct * 100) if p.latest_customer_gp_pct is not none else '—' }}</td>
         <td style="text-align:right;white-space:nowrap">
           <a class="btn btn-primary btn-sm" href="/admin/costing/products/{{ p.id }}/cost">Calculator</a>
           <details style="display:inline-block;text-align:left">
@@ -61,7 +68,7 @@
               </div>
               <div class="row row-3">
                 <div class="field"><label>Selling</label><input type="number" name="selling_price" step="any" value="{{ p.selling_price if p.selling_price is not none else '' }}"></div>
-                <div class="field"><label>Retail</label><input type="number" name="retail_price" step="any" value="{{ p.retail_price if p.retail_price is not none else '' }}"></div>
+                <div class="field"><label>Customer price</label><input type="number" name="retail_price" step="any" value="{{ p.retail_price if p.retail_price is not none else '' }}"></div>
                 <div class="field"><label>Active</label><input type="checkbox" name="active" {% if p.active %}checked{% endif %} style="width:auto"></div>
               </div>
               <button type="submit" class="btn btn-primary btn-sm">Save changes</button>

@@ -1,0 +1,86 @@
+{% extends "admin/base.html" %}
+{% block title %}Costing — import preview{% endblock %}
+{% block content %}
+{% macro money(v) %}{% if v is not none %}{{ currency() }}{{ '%.4f'|format(v) }}{% else %}—{% endif %}{% endmacro %}
+<h1>Import preview — {{ filename }}</h1>
+<p style="color:var(--muted);font-size:13px;margin-top:-4px">
+  Nothing has been written yet — review, then confirm.
+  <a href="/admin/costing/import" style="color:var(--accent)">← Upload a different file</a>
+</p>
+
+<div class="card">
+  <h2>Summary</h2>
+  <p style="margin-bottom:16px">
+    <span class="badge badge-ok">{{ report.costings_created }} draft costings ready</span>
+    <span class="badge badge-warn">{{ attention }} need attention</span>
+    <span class="badge badge-viewer">{{ report.products_created }} new products</span>
+    <span class="badge badge-viewer">{{ report.products_updated }} product updates</span>
+    {% if report.skipped %}<span class="badge badge-viewer">{{ report.skipped }} skipped</span>{% endif %}
+  </p>
+  <p style="color:var(--muted);font-size:13px">
+    Profit and total use the stored selling price, else the auto-target from the
+    10% margin default (direct cost ÷ 0.9, rounded to 2dp). The customer price
+    uses the stored retail, else the 35%-margin target (selling ÷ 0.65 × 1.20,
+    rounded to 2dp). Existing prices are never overwritten.
+  </p>
+  <form method="post" action="/admin/costing/import/confirm">
+    <textarea name="payload" hidden aria-hidden="true">{{ payload_json }}</textarea>
+    <input type="hidden" name="filename" value="{{ filename }}">
+    <input type="hidden" name="staging" value="{{ staging_name }}">
+    <label style="display:flex;gap:8px;align-items:center;margin:10px 0;font-size:13px">
+      <input type="checkbox" name="finalise" value="1" style="width:auto">
+      Finalise these drafts immediately — publish to the customer dashboard
+      (off = saved as drafts for review, nothing published)
+    </label>
+    <button type="submit" class="btn btn-primary"
+            data-confirm="Import {{ report.rows|length }} rows?">
+      Confirm import
+    </button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Review — {{ report.rows|length }} rows</h2>
+  <div style="overflow-x:auto">
+  <table>
+    <thead><tr>
+      <th>#</th><th>Name</th><th>EAN</th><th>UPT</th><th>Material (N)</th>
+      <th>Box</th><th>Pallet (K)</th><th>Direct cost</th><th>Profit</th>
+      <th>Total (selling)</th><th>Customer price (auto)</th><th>Cust GP%</th>
+      <th>Status</th><th>Warnings</th>
+    </tr></thead>
+    <tbody>
+    {% for r in report.rows %}
+      <tr{% if r.status != 'costed' %} style="background:#facc1508"{% endif %}>
+        <td style="color:var(--muted)">{{ r.row_number }}</td>
+        <td>{{ r.name or '—' }}</td>
+        <td>
+          {% if r.ean %}{{ r.ean }}{% if 'ean_suspect' in r.warnings %} <span class="badge badge-warn">suspect</span>{% endif %}
+          {% else %}<span style="color:var(--muted)">—</span>{% endif %}
+        </td>
+        <td>{{ r.upt if r.upt is not none else '—' }}</td>
+        <td>{{ money(r.material_cost) }}</td>
+        <td>
+          {% if r.box_code %}
+            {{ r.box_code }}
+          {% else %}<span class="badge badge-err">unresolved</span>{% endif %}
+        </td>
+        <td style="color:var(--muted)">{{ r.per_pallet_raw or '—' }}</td>
+        <td>{{ money(r.total_direct_cost) }}</td>
+        <td>{{ money(r.our_gp) }}</td>
+        <td>{{ money(r.selling_price) }}</td>
+        <td>{{ money(r.retail_price) }}</td>
+        <td>{{ '%.2f%%'|format(r.customer_gp_pct * 100) if r.customer_gp_pct is not none else '—' }}</td>
+        <td>
+          {% if r.status == 'costed' %}<span class="badge badge-ok">draft ready</span>
+          {% elif r.status == 'attention' %}<span class="badge badge-warn">attention</span>
+          {% else %}<span class="badge badge-viewer">skipped</span>{% endif %}
+        </td>
+        <td style="color:var(--warn);font-size:12px">{{ r.warnings|join('; ') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}
