@@ -414,7 +414,8 @@ def run_offer_import(
     seen_key_eans: set[str] = set()
     dry_seen: dict[str, dict] = {}  # dry run: key -> simulated stored product
 
-    def handle(row: OfferRow, conn=None) -> None:  # noqa: ANN001
+    def handle(row: OfferRow, conn=None,  # noqa: ANN001
+               offer_import_id: int | None = None) -> None:
         if not row.name:
             report.skipped += 1
             report.rows.append(_row_report(row, status="skipped"))
@@ -449,11 +450,16 @@ def run_offer_import(
             key = db_ean if db_ean else row.name.strip()
             existing = dry_seen.get(key) or db.find_product_by_key(row.name, db_ean)
         created = existing is None
+        # Only an admin-set ("human") price wins. A price a previous import
+        # generated is stale derived data: price movements arrive in the
+        # supplier's offers, so it is recomputed from this offer's cost.
+        admin_priced = (existing is not None
+                        and existing.get("price_origin") == "human")
         stored_selling = None
-        if existing is not None and existing.get("selling_price") is not None:
+        if admin_priced and existing.get("selling_price") is not None:
             stored_selling = float(existing["selling_price"])
         stored_retail = None
-        if existing is not None and existing.get("retail_price") is not None:
+        if admin_priced and existing.get("retail_price") is not None:
             stored_retail = float(existing["retail_price"])
         if created:
             report.products_created += 1
@@ -515,7 +521,8 @@ def run_offer_import(
                 retail_price=retail)
             db.save_costing(product_id, inputs.model_dump(), results.as_floats(),
                             created_by=actor,
-                            status="final" if finalise else "draft", conn=conn)
+                            status="final" if finalise else "draft", conn=conn,
+                            offer_import_id=offer_import_id)
         else:
             dry_seen[key] = {"selling_price": selling, "retail_price": retail}
         report.costings_created += 1
@@ -537,10 +544,15 @@ def run_offer_import(
         return report
 
     with pool().connection() as conn:        # one transaction: all-or-nothing
+        # The batch row is opened first so each costing can reference it; its
+        # counts are written below. A failure rolls the whole thing back, batch
+        # row included, so a half-imported offer never appears in the history.
+        batch_id = db.create_offer_import(source, actor, conn, finalised=finalise)
+        report.batch_id = batch_id
         for row in rows:
-            handle(row, conn=conn)
-        report.batch_id = db.record_offer_import(
-            source, actor, len(rows), report.products_created,
+            handle(row, conn=conn, offer_import_id=batch_id)
+        db.update_offer_import_counts(
+            batch_id, len(rows), report.products_created,
             report.products_updated, report.costings_created, report.skipped,
-            conn=conn, finalised=finalise)
+            conn=conn)
     return report

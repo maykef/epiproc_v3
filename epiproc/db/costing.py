@@ -154,7 +154,8 @@ def upsert_product(
             conn.execute(
                 """UPDATE products
                    SET name=%s, ean=%s, units_per_tray=%s, retail_price=%s,
-                       selling_price=%s, active=%s, updated_at=now()
+                       selling_price=%s, active=%s, updated_at=now(),
+                       price_origin='human'
                    WHERE id=%s""",
                 (fields["name"], fields["ean"], fields["units_per_tray"],
                  fields["retail_price"], fields["selling_price"], fields["active"], target),
@@ -162,8 +163,9 @@ def upsert_product(
             return target
         row = conn.execute(
             """INSERT INTO products
-               (name, ean, units_per_tray, retail_price, selling_price, active)
-               VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+               (name, ean, units_per_tray, retail_price, selling_price, active,
+                price_origin)
+               VALUES (%s, %s, %s, %s, %s, %s, 'human') RETURNING id""",
             (fields["name"], fields["ean"], fields["units_per_tray"],
              fields["retail_price"], fields["selling_price"], fields["active"]),
         ).fetchone()
@@ -191,35 +193,45 @@ def upsert_product_by_key(
     retail_price: float | None = None,
 ) -> tuple[int, bool]:
     """Upsert for the offer import (keying per :func:`find_product_by_key`).
-    Unlike :func:`upsert_product`, an update only touches name/ean/UPT —
-    prices set by an admin survive a re-import. ``selling_price``/``retail_price``
-    (the import's auto-target prices) are COALESCE'd so a stored price — set by
-    an admin, or from an earlier import — always wins. ``ean`` is only written
-    on create or when the offer row has one (a blank offer EAN never wipes a
-    stored one). Returns (product_id, created)."""
+    Price provenance decides what an import may touch (``products.price_origin``,
+    migration 0012): a ``human`` price — set by an admin on the admin site — is
+    never written by an import, while an ``auto`` price is replaced outright by
+    the new offer's. Price movements arrive in the supplier's offers, so an auto
+    price must follow the latest one rather than freeze at the first import.
+    ``ean`` is only written on create or when the offer row has one (a blank
+    offer EAN never wipes a stored one). Returns (product_id, created)."""
     name = name.strip()
     existing = find_product_by_key(name, ean, conn=conn)
 
     if existing is not None:
-        # units_per_tray and the auto prices are COALESCE'd so a re-import row
-        # with a missing UPT never clobbers a previously imported value, and an
-        # auto price never overwrites a stored one.
-        conn.execute(
-            """UPDATE products
-               SET name=%s, units_per_tray=COALESCE(%s, units_per_tray),
-                   updated_at=now(), ean=COALESCE(%s, ean),
-                   selling_price=COALESCE(selling_price, %s),
-                   retail_price=COALESCE(retail_price, %s)
-               WHERE id=%s""",
-            (name, units_per_tray, ean or None, selling_price, retail_price,
-             existing["id"]),
-        )
+        if existing.get("price_origin") == "human":
+            # Admin-managed prices: touch identity/UPT only, never the money.
+            conn.execute(
+                """UPDATE products
+                   SET name=%s, units_per_tray=COALESCE(%s, units_per_tray),
+                       updated_at=now(), ean=COALESCE(%s, ean)
+                   WHERE id=%s""",
+                (name, units_per_tray, ean or None, existing["id"]),
+            )
+        else:
+            # Import-derived prices: assign outright (no COALESCE — that is what
+            # froze them at the first offer), so this offer's prices take effect.
+            conn.execute(
+                """UPDATE products
+                   SET name=%s, units_per_tray=COALESCE(%s, units_per_tray),
+                       updated_at=now(), ean=COALESCE(%s, ean),
+                       selling_price=%s, retail_price=%s, price_origin='auto'
+                   WHERE id=%s""",
+                (name, units_per_tray, ean or None, selling_price, retail_price,
+                 existing["id"]),
+            )
         return existing["id"], False
 
     row = conn.execute(
         """INSERT INTO products
-           (name, ean, units_per_tray, selling_price, retail_price, active)
-           VALUES (%s, %s, %s, %s, %s, TRUE) RETURNING id""",
+           (name, ean, units_per_tray, selling_price, retail_price, active,
+            price_origin)
+           VALUES (%s, %s, %s, %s, %s, TRUE, 'auto') RETURNING id""",
         (name, ean or None, units_per_tray or 1, selling_price, retail_price),
     ).fetchone()
     return row["id"], True
@@ -248,6 +260,109 @@ def record_offer_import(
          costings_created, skipped, finalised),
     ).fetchone()
     return row["id"]
+
+
+def create_offer_import(
+    filename: str,
+    uploaded_by: str,
+    conn,  # noqa: ANN001 — caller's transaction (one import = one batch row)
+    finalised: bool = False,
+) -> int:
+    """Open the batch row for an offer upload and return its id. Created BEFORE
+    the rows are costed so every costing can carry ``offer_import_id`` — the link
+    that makes a product's prices a dated series, one point per offer. The counts
+    are filled in by :func:`update_offer_import_counts` at the end of the same
+    transaction, so a failed import leaves no batch behind."""
+    row = conn.execute(
+        """INSERT INTO offer_imports (filename, uploaded_by, finalised)
+           VALUES (%s, %s, %s) RETURNING id""",
+        (filename, uploaded_by, finalised),
+    ).fetchone()
+    return row["id"]
+
+
+def update_offer_import_counts(
+    offer_import_id: int,
+    row_count: int,
+    products_created: int,
+    products_updated: int,
+    costings_created: int,
+    skipped: int,
+    conn,  # noqa: ANN001 — the import's transaction
+) -> None:
+    """Write the tallies onto a batch row opened by :func:`create_offer_import`."""
+    conn.execute(
+        """UPDATE offer_imports
+           SET row_count=%s, products_created=%s, products_updated=%s,
+               costings_created=%s, skipped=%s
+           WHERE id=%s""",
+        (row_count, products_created, products_updated, costings_created,
+         skipped, offer_import_id),
+    )
+
+
+def get_offer_history() -> list[dict]:
+    """Every offer upload, newest first, with how many costings it produced —
+    the collapsed rows of the price history list."""
+    with pool().connection() as conn:
+        rows = conn.execute(
+            """SELECT oi.id, oi.filename, oi.uploaded_at, oi.uploaded_by,
+                      oi.finalised, oi.row_count, oi.products_created,
+                      oi.products_updated, COUNT(c.id) AS costing_count
+               FROM offer_imports oi
+               LEFT JOIN costings c ON c.offer_import_id = oi.id
+               GROUP BY oi.id
+               ORDER BY oi.uploaded_at DESC, oi.id DESC"""
+        ).fetchall()
+    return [_row(r) for r in rows]
+
+
+def get_offer_detail(offer_import_id: int) -> list[dict]:
+    """The per-product prices recorded by one offer — what an expanded row shows.
+    Costs/prices come from the costing snapshot, not the product, so the figures
+    are the ones this offer actually produced even if the product moved since."""
+    with pool().connection() as conn:
+        rows = conn.execute(
+            """SELECT p.name, p.ean, c.version, c.status,
+                      (c.results->>'total_direct_cost')::numeric AS total_cost,
+                      (c.inputs->>'selling_price')::numeric      AS selling_price,
+                      (c.inputs->>'retail_price')::numeric       AS retail_price
+               FROM costings c
+               JOIN products p ON p.id = c.product_id
+               WHERE c.offer_import_id = %s
+               ORDER BY p.name""",
+            (offer_import_id,),
+        ).fetchall()
+    return [_row(r) for r in rows]
+
+
+def get_offer_history_data() -> dict:
+    """Offer history for the customer-facing Costing tab: every upload, newest
+    first, each carrying the per-product prices it recorded. Two queries (not one
+    per offer), stitched in Python, so the tab stays a single inlined payload."""
+    offers = get_offer_history()
+    if not offers:
+        return {"offers": []}
+    with pool().connection() as conn:
+        rows = conn.execute(
+            """SELECT c.offer_import_id, p.name, p.ean, c.version, c.status,
+                      (c.results->>'total_direct_cost')::numeric AS total_cost,
+                      (c.inputs->>'selling_price')::numeric      AS selling_price,
+                      (c.inputs->>'retail_price')::numeric       AS retail_price
+               FROM costings c
+               JOIN products p ON p.id = c.product_id
+               WHERE c.offer_import_id = ANY(%s)
+               ORDER BY p.name""",
+            ([o["id"] for o in offers],),
+        ).fetchall()
+    by_offer: dict[int, list[dict]] = {}
+    for r in rows:
+        item = _row(r)
+        by_offer.setdefault(item.pop("offer_import_id"), []).append(item)
+    for o in offers:
+        o["items"] = by_offer.get(o["id"], [])
+        o["uploaded_at"] = o["uploaded_at"].isoformat() if o.get("uploaded_at") else None
+    return {"offers": offers}
 
 
 # ── Box types ────────────────────────────────────────────────────────────────
@@ -363,36 +478,41 @@ def save_costing(
     created_by: str | None = None,
     status: str = "draft",
     conn=None,  # noqa: ANN001 — caller's transaction (offer import batches in one)
+    offer_import_id: int | None = None,
 ) -> dict:
     """Persist a costing as the next version for a product. ``inputs``/``results``
     are the fully-resolved snapshots (see calc / router). Version assignment is a
     single INSERT with a MAX(version)+1 subquery, guarded by UNIQUE(product_id,
     version) so a concurrent save fails loudly rather than duplicating a version.
-    Returns {id, version}."""
+    ``offer_import_id`` ties the version to the dated offer that produced it (NULL
+    for a costing saved by hand in the admin calculator), so a product's prices
+    form one point per uploaded offer. Returns {id, version}."""
     if status not in ("draft", "final"):
         raise ValueError(f"invalid costing status: {status!r}")
     if conn is not None:
         row = conn.execute(
-            """INSERT INTO costings (product_id, version, status, inputs, results, created_by)
+            """INSERT INTO costings (product_id, version, status, inputs, results,
+                                     created_by, offer_import_id)
                VALUES (
                    %s,
                    (SELECT COALESCE(MAX(version), 0) + 1 FROM costings WHERE product_id = %s),
-                   %s, %s::jsonb, %s::jsonb, %s)
+                   %s, %s::jsonb, %s::jsonb, %s, %s)
                RETURNING id, version""",
             (product_id, product_id, status,
-             json.dumps(inputs), json.dumps(results), created_by),
+             json.dumps(inputs), json.dumps(results), created_by, offer_import_id),
         ).fetchone()
         return {"id": row["id"], "version": row["version"]}
     with pool().connection() as c:
         row = c.execute(
-            """INSERT INTO costings (product_id, version, status, inputs, results, created_by)
+            """INSERT INTO costings (product_id, version, status, inputs, results,
+                                     created_by, offer_import_id)
                VALUES (
                    %s,
                    (SELECT COALESCE(MAX(version), 0) + 1 FROM costings WHERE product_id = %s),
-                   %s, %s::jsonb, %s::jsonb, %s)
+                   %s, %s::jsonb, %s::jsonb, %s, %s)
                RETURNING id, version""",
             (product_id, product_id, status,
-             json.dumps(inputs), json.dumps(results), created_by),
+             json.dumps(inputs), json.dumps(results), created_by, offer_import_id),
         ).fetchone()
     return {"id": row["id"], "version": row["version"]}
 
