@@ -5,10 +5,12 @@ It computes the total direct cost of packing and distributing one selling unit o
 a product, and the resulting gross profit for us and for the customer, plus two
 reverse target-price solvers.
 
-**Status:** merged to master and deployed live to the floral_portal instance on
-2026-08-14 (`epiproc:3.0.0-50252f9`), Costing tab enabled. The workbook's worked
-example was seeded on the instance and verified: all 18 pinned spreadsheet values
-(every intermediate and output) match the stored costing to 1e-9.
+**Status:** live on floral_portal as `epiproc:3.0.0-d6161a4` (deployed 2026-08-22),
+Costing tab enabled, currency `€`. The offer-sheet import and offer price history
+shipped in this version; the module itself first went live 2026-08-14
+(`epiproc:3.0.0-50252f9`). The workbook's worked example was seeded on the instance
+and verified: all 18 pinned spreadsheet values (every intermediate and output) match
+the stored costing to 1e-9.
 
 Like the rest of the engine it is data-free and per-instance: the schema ships in
 the shared image (migration `0009_costing.sql`); every product, price, and saved
@@ -18,9 +20,9 @@ costing lives in the customer container's own Postgres.
 
 | Layer | File | Responsibility |
 |---|---|---|
-| Migration | `epiproc/db/migrations/0009_costing.sql`, `0010_costing_offer_defaults.sql`, `0011_costing_offer_imports.sql` | `products`, `box_types`, `cost_menu_items`, `costings` + seeds + `costing_defaults` setting (+ engine constants, `offer_imports` batch table) |
+| Migration | `epiproc/db/migrations/0009_costing.sql`, `0010_costing_offer_defaults.sql`, `0011_costing_offer_imports.sql`, `0012_costing_offer_history.sql` | `products`, `box_types`, `cost_menu_items`, `costings` + seeds + `costing_defaults` setting (+ engine constants, `offer_imports` batch table, `costings.offer_import_id`, `products.price_origin`) |
 | Pure calc | `epiproc/costing/calc.py` | pydantic input/result models + `compute()` — no I/O, no DB, no LLM |
-| Offer import | `epiproc/costing/offer_import.py` | offer-sheet parser, row→inputs mapping, batch driver (drafts only) |
+| Offer import | `epiproc/costing/offer_import.py` | offer-sheet parser, row→inputs mapping, batch driver |
 | DB | `epiproc/db/costing.py` | raw-SQL CRUD + versioned `save_costing` + `upsert_product_by_key` + dashboard read model |
 | HTTP/UI | `epiproc/web/routers/costing.py` + `templates/admin/costing_*.html` | admin master data + the calculator + the offer import wizard; customer-facing read-only tab |
 
@@ -253,3 +255,48 @@ imports use the default selection above; refine a draft in the calculator.
   history (`invoice_items`, keyed by article/EAN), so a costing starts from real
   paid prices rather than manual entry. The costing math stays deterministic Python
   either way; invoices only seed the inputs. No LLM in the arithmetic path.
+
+
+## Offer price history (migration 0012)
+
+Each confirmed upload is a dated version of the price set. `costings.offer_import_id`
+ties every saved costing to the `offer_imports` row that produced it (NULL = saved by
+hand in the admin calculator), so a product's prices form a series with one point per
+offer. The batch row is opened at the start of the import transaction rather than the
+end, so each costing can reference it; the counts are written at the close of the same
+transaction, and a failure still rolls the batch row back with everything else.
+
+The customer-facing Costing tab is indexed by these offers: the files are listed newest
+first by filename and submission date, and opening one shows the whole book of prices it
+recorded — each row keeping its own Breakdown. Figures come from the costing snapshot,
+not the product, so an old offer keeps showing what it actually produced.
+
+## Price provenance (migration 0012)
+
+`products.price_origin` is `'human'` or `'auto'`, default `'human'`.
+
+Fixed costs are maintained by hand on the admin site, but **price movements arrive in the
+supplier's offers** — so an import-derived price must follow the newest offer instead of
+freezing at the first one. Before 0012 the import persisted its auto price and then read
+it back as "stored" on the next run, which pinned every product's price to its first
+import and made later offers inert.
+
+- `'human'` — set by an admin (`upsert_product`). An import never touches it.
+- `'auto'` — derived by an import. The next import reassigns it outright from that
+  offer's cost (the `COALESCE` that froze it is gone).
+
+No backfill: rows that predate the offer import are admin-managed by definition, so the
+`DEFAULT 'human'` is correct on an existing instance. Deliberately so — floral_portal's
+hand-seeded product carries prices typed from the workbook, and a backfill keyed on
+"has a costing" would have relabelled it `'auto'` and let an import overwrite them.
+
+## Managing uploads
+
+Admin → Costing is ordered as the work is done: **Edit fixed costs**, **Add your file**,
+**Add a product**. Uploaded files are listed with their date, product count and status;
+deleting one removes the upload, the costing versions it created and its archived
+workbook. Products are kept — one may carry admin edits or costings from other offers, so
+dropping an upload must not wipe the catalogue.
+
+Confirming an import publishes it: the confirm is itself the bulk approval, and the
+costings save as final.

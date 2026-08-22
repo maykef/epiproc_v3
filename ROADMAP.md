@@ -32,29 +32,40 @@ its own design + testing pass.
 
 ## Recently closed
 
-- **Offer-sheet batch import built and mock-verified** (2026-08-19, branch
-  `feature/costing-offer-import`, not yet deployed) — Admin → Costing → Import
-  offer (.xlsx): upload → dry-run preview → confirm, one transaction per import,
-  idempotent re-imports keyed by valid EAN (else exact name), one `offer_imports`
-  row + archived workbook per upload, per-product versioned costings — always
-  **draft** unless the admin ticks the preview's **bulk-finalise checkbox**.
-  Column mapping per the operator: B name, C EAN, J UPT, L box height (first
-  integer → smallest real box model it fits, 34/40/48/80), **N** material cost
-  (column M deliberately ignored), K display only; shared constants from
-  `costing_defaults` (migration 0010). Rows without stored prices get auto
-  selling = direct ÷ 0.9 (Target FP) and auto retail = selling ÷ 0.65 × 1.2
-  (Target Retail) — filling customer GP% with zero manual steps; stored prices
-  always win. Dashboard Costing tab columns finalised per the operator:
-  Total cost, then **Our Price** (cost + 10%, derived), Our GP%, Customer GP%,
-  **Customer price** (retail inc VAT) last — no "Selling" column on the tab —
-  and every costing money cell renders the instance's `settings.currency_symbol`
-  (€ on the demo, Jinja `currency()` global). Tests: offer parser + box
-  resolution units, costing integration additions (84 tests with the PG DSN).
-  Full E2E green twice on the costingdemo mock (draft run + bulk-finalise run).
-  Known data-quality flag: the real offer file's rows 8/10 share barcode
-  8713626094170 (two different Chrysanthemums) — flagged `duplicate_ean`, the
-  operator should fix one. Awaiting operator approval of the mock before baking
-  into `epiproc:3`.
+- **Offer-sheet batch import + offer price history shipped live** (2026-08-22,
+  `epiproc:3.0.0-d6161a4`) — Admin → Costing → **Add your file**: upload → preview →
+  confirm, one transaction per import, idempotent by valid EAN (else exact name), one
+  `offer_imports` row + archived workbook per upload, per-product versioned costings.
+  Column mapping per the operator: B name, C EAN, J UPT, L box height (first integer →
+  smallest real box model that fits, 34/40/48/80), **N** material cost (M ignored), K
+  display only. Rows without stored prices get auto selling = direct ÷ 0.9 and auto
+  retail = selling ÷ 0.65 × 1.2.
+  **Migration 0012** added the two things that made it useful more than once:
+  `costings.offer_import_id` ties every version to the dated offer that produced it, and
+  `products.price_origin` ('human' | 'auto') stops an import-derived price freezing at
+  the first upload — fixed costs are hand-managed on the admin site, but price movements
+  arrive in the supplier's offers, so an auto price now follows the newest one while an
+  admin-set price is never touched. No backfill: existing rows predate the import and are
+  admin-managed by definition (a "has a costing" heuristic would have relabelled the
+  hand-seeded live product and let an import overwrite its prices).
+  The customer Costing tab is now **indexed by offer** — files newest-first by name and
+  submission date, each opening the book of prices it recorded, each row keeping its
+  Breakdown. Admin → Costing reordered (Edit fixed costs / Add your file / Add a product)
+  with an Uploaded files section that can delete an upload and its costings while keeping
+  the products. Confirming an import publishes it; there is no draft state.
+  Tests: 93 pass, including 9 new integration cases covering both price origins across a
+  re-import, batch linkage, history ordering/nesting, and a forced mid-import failure
+  rolling back completely. Live verified: Roses kept `price_origin='human'` with its
+  hand-typed 3.98/5.99 intact; an auto product's price moved 5.05 → 8.77 when its cost
+  doubled.
+  Known data-quality flag: the operator's offer file has two different Chrysanthemums
+  sharing barcode 8713626094170 (rows 8/10) — flagged `duplicate_ean`; they merge into
+  one product, so the sheet should be fixed.
+  Follow-ups not built: sudden-increase flagging between offers (the data now supports it
+  without another migration), and the confirm step re-parses the client-submitted preview
+  payload rather than re-reading the staged workbook, so the archived file is not
+  structurally guaranteed to match what was imported.
+
 - **Per-unit product costing shipped to the live floral_portal instance**
   (2026-08-14) — the costing module (migration 0009, admin calculator, read-only
   customer Costing dashboard tab) was clone-tested against real data, merged to
