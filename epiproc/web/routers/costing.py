@@ -117,9 +117,35 @@ def products_page(request: Request, ok: str = "", err: str = ""):
     return templates.TemplateResponse(request, "admin/costing_products.html", {
         "me": me["username"],
         "products": products,
+        "offer_imports": db.get_offer_history(),
         "flash_msg": ok or err,
         "flash_kind": "ok" if ok else ("err" if err else ""),
     })
+
+
+@router.post("/admin/costing/imports/{offer_import_id}/delete")
+async def import_delete(request: Request, offer_import_id: int):
+    """Remove an uploaded offer: the costing versions it created, its batch row
+    and its archived workbook. Products are kept — they may carry admin edits or
+    costings from other offers."""
+    me = _admin(request)
+    deleted = db.delete_offer_import(offer_import_id)
+    if deleted is None:
+        return RedirectResponse(
+            "/admin/costing/products?err=" + _enc("That upload no longer exists."),
+            status_code=303)
+    archived = _IMPORTS_DIR / f"offer_{offer_import_id}_{Path(deleted['filename']).name}"
+    try:
+        archived.unlink(missing_ok=True)
+    except OSError:
+        pass  # the row is gone either way; a stray file is not worth a 500
+    _audit(request, me, "costing_offer_import_delete", {
+        "batch_id": offer_import_id, "filename": deleted["filename"],
+    })
+    return RedirectResponse(
+        "/admin/costing/products?ok="
+        + _enc(f"Deleted upload \u201c{deleted['filename']}\u201d and its costings."),
+        status_code=303)
 
 
 @router.post("/admin/costing/products")

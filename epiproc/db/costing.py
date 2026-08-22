@@ -336,6 +336,24 @@ def get_offer_detail(offer_import_id: int) -> list[dict]:
     return [_row(r) for r in rows]
 
 
+def delete_offer_import(offer_import_id: int) -> dict | None:
+    """Remove an uploaded offer and the costing versions it created, in one
+    transaction. Products are deliberately kept: a product may carry admin edits
+    or costings from other offers, so dropping the upload must not delete the
+    catalogue. Returns the deleted row (for the caller to unlink its archived
+    workbook), or None when there was nothing to delete."""
+    with pool().connection() as conn:
+        row = conn.execute(
+            "SELECT id, filename FROM offer_imports WHERE id = %s",
+            (offer_import_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute("DELETE FROM costings WHERE offer_import_id = %s", (offer_import_id,))
+        conn.execute("DELETE FROM offer_imports WHERE id = %s", (offer_import_id,))
+    return dict(row)
+
+
 def get_offer_history_data() -> dict:
     """Offer history for the customer-facing Costing tab: every upload, newest
     first, each carrying the per-product prices it recorded. Two queries (not one
@@ -345,10 +363,8 @@ def get_offer_history_data() -> dict:
         return {"offers": []}
     with pool().connection() as conn:
         rows = conn.execute(
-            """SELECT c.offer_import_id, p.name, p.ean, c.version, c.status,
-                      (c.results->>'total_direct_cost')::numeric AS total_cost,
-                      (c.inputs->>'selling_price')::numeric      AS selling_price,
-                      (c.inputs->>'retail_price')::numeric       AS retail_price
+            """SELECT c.offer_import_id, c.product_id AS id, p.name, p.ean,
+                      c.version, c.status, c.results, c.inputs
                FROM costings c
                JOIN products p ON p.id = c.product_id
                WHERE c.offer_import_id = ANY(%s)
@@ -358,7 +374,23 @@ def get_offer_history_data() -> dict:
     by_offer: dict[int, list[dict]] = {}
     for r in rows:
         item = _row(r)
-        by_offer.setdefault(item.pop("offer_import_id"), []).append(item)
+        batch = item.pop("offer_import_id")
+        # Same shape as get_costing_dashboard_data's rows, so one renderer serves
+        # both surfaces — including each row's full breakdown.
+        results = item.pop("results") or {}
+        inputs = item.pop("inputs") or {}
+        total_cost = results.get("total_direct_cost")
+        item.update({
+            "selling_price": inputs.get("selling_price"),
+            "retail_price": inputs.get("retail_price"),
+            "total_direct_cost": total_cost,
+            "our_price": round(total_cost * 1.10, 4) if total_cost is not None else None,
+            "our_gp": results.get("our_gp"),
+            "our_gp_pct": results.get("our_gp_pct"),
+            "customer_gp_pct": results.get("customer_gp_pct"),
+            "results": results or None,
+        })
+        by_offer.setdefault(batch, []).append(item)
     for o in offers:
         o["items"] = by_offer.get(o["id"], [])
         o["uploaded_at"] = o["uploaded_at"].isoformat() if o.get("uploaded_at") else None

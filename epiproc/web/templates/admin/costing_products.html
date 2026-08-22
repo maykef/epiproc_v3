@@ -5,12 +5,34 @@
 <h1>Product costing</h1>
 <p style="color:var(--muted);font-size:13px;margin-top:-4px">
   Product master data for the per-unit costing calculator. Admin-only.
-  <a href="/admin/costing/menus" style="color:var(--accent)">Edit menus, box types &amp; defaults →</a>
-  <a href="/admin/costing/import" style="color:var(--accent)">Import offer (.xlsx) →</a>
 </p>
 
 <div class="card">
-  <h2>Add product</h2>
+  <h2>Edit fixed costs</h2>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:20px">
+    The rates every product is costed against — cost menus, box types, transport,
+    labour and target margins. Maintained by hand; the supplier's offers never
+    change them.
+  </p>
+  <a class="btn btn-primary" href="/admin/costing/menus">Edit fixed costs</a>
+</div>
+
+<div class="card">
+  <h2>Add your file</h2>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:20px">
+    Upload the supplier's offer spreadsheet (.xlsx, max 10 MB). You see every product
+    it contains before anything is saved, and approve them in bulk from there.
+  </p>
+  <form method="post" action="/admin/costing/import/preview" enctype="multipart/form-data">
+    <div class="field" style="margin-bottom:20px">
+      <input type="file" name="file" accept=".xlsx" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Upload</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Add a product</h2>
   <form method="post" action="/admin/costing/products">
     <input type="hidden" name="product_id" value="">
     <div class="row row-3">
@@ -23,62 +45,100 @@
       <div class="field"><label>Customer price (inc VAT)</label><input type="number" name="retail_price" step="any"></div>
       <div class="field"><label>Active</label><input type="checkbox" name="active" checked style="width:auto"></div>
     </div>
-    <button type="submit" class="btn btn-primary">Add product</button>
+    <div style="margin-top:20px">
+      <button type="submit" class="btn btn-primary">Add product</button>
+    </div>
   </form>
 </div>
 
 <div class="card">
-  <h2>Products</h2>
-  {% if not products %}
-    <p style="color:var(--muted);font-size:13px">No products yet — add one above.</p>
+  <h2>Uploaded files</h2>
+  {% if not offer_imports %}
+    <p style="color:var(--muted);font-size:13px">No offers uploaded yet.</p>
   {% else %}
   <table>
     <thead><tr>
-      <th>Name</th><th>EAN</th><th>UPT</th><th>Selling</th><th>Customer price</th>
-      <th>Latest cost</th><th>Profit</th><th>Cust GP%</th><th></th>
+      <th>File</th><th>Uploaded</th><th>Products</th><th>Status</th><th></th>
     </tr></thead>
     <tbody>
-    {% for p in products %}
+    {% for f in offer_imports %}
       <tr>
-        <td>{{ p.name }}{% if not p.active %} <span class="badge badge-err">inactive</span>{% endif %}</td>
-        <td style="color:var(--muted)">{{ p.ean or '—' }}</td>
-        <td>{{ p.units_per_tray }}</td>
-        <td>{{ money(p.selling_price) }}</td>
-        <td>{{ money(p.retail_price) }}</td>
+        <td>{{ f.filename }}</td>
+        <td style="color:var(--muted);white-space:nowrap">{{ f.uploaded_at.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ f.costing_count }}</td>
         <td>
-          {% if p.latest_cost is not none %}
-            {{ money(p.latest_cost) }}
-            <span style="color:var(--muted)">(v{{ p.latest_version }}
-              {% if p.latest_status == 'final' %}<span class="badge badge-ok">final</span>
-              {% else %}<span class="badge badge-warn">draft</span>{% endif %})</span>
-          {% else %}<span style="color:var(--muted)">—</span>{% endif %}
+          {% if f.finalised %}<span class="badge badge-ok">approved</span>
+          {% else %}<span class="badge badge-warn">draft</span>{% endif %}
         </td>
-        <td>{{ money(p.latest_gp) }}</td>
-        <td>{{ '%.2f%%'|format(p.latest_customer_gp_pct * 100) if p.latest_customer_gp_pct is not none else '—' }}</td>
-        <td style="text-align:right;white-space:nowrap">
-          <a class="btn btn-primary btn-sm" href="/admin/costing/products/{{ p.id }}/cost">Calculator</a>
-          <details style="display:inline-block;text-align:left">
-            <summary style="display:inline">Edit</summary>
-            <form method="post" action="/admin/costing/products" style="margin-top:10px">
-              <input type="hidden" name="product_id" value="{{ p.id }}">
-              <div class="row row-3">
-                <div class="field"><label>Name</label><input type="text" name="name" value="{{ p.name }}" required></div>
-                <div class="field"><label>EAN</label><input type="text" name="ean" value="{{ p.ean or '' }}"></div>
-                <div class="field"><label>UPT</label><input type="number" name="units_per_tray" value="{{ p.units_per_tray }}" min="0" step="1"></div>
-              </div>
-              <div class="row row-3">
-                <div class="field"><label>Selling</label><input type="number" name="selling_price" step="any" value="{{ p.selling_price if p.selling_price is not none else '' }}"></div>
-                <div class="field"><label>Customer price</label><input type="number" name="retail_price" step="any" value="{{ p.retail_price if p.retail_price is not none else '' }}"></div>
-                <div class="field"><label>Active</label><input type="checkbox" name="active" {% if p.active %}checked{% endif %} style="width:auto"></div>
-              </div>
-              <button type="submit" class="btn btn-primary btn-sm">Save changes</button>
-            </form>
-          </details>
+        <td style="text-align:right">
+          <form method="post" action="/admin/costing/imports/{{ f.id }}/delete"
+                data-confirm="Delete this upload and the costing versions it created? The products themselves are kept.">
+            <button type="submit" class="btn btn-sm">Delete</button>
+          </form>
         </td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
   {% endif %}
+</div>
+
+<div class="card">
+  <details>
+    <summary style="cursor:pointer">Products ({{ products|length }})</summary>
+    <div style="margin-top:16px">
+    {% if not products %}
+      <p style="color:var(--muted);font-size:13px">No products yet — add one above.</p>
+    {% else %}
+    <table>
+      <thead><tr>
+        <th>Name</th><th>EAN</th><th>UPT</th><th>Selling</th><th>Customer price</th>
+        <th>Latest cost</th><th>Profit</th><th>Cust GP%</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for p in products %}
+        <tr>
+          <td>{{ p.name }}{% if not p.active %} <span class="badge badge-err">inactive</span>{% endif %}</td>
+          <td style="color:var(--muted)">{{ p.ean or '—' }}</td>
+          <td>{{ p.units_per_tray }}</td>
+          <td>{{ money(p.selling_price) }}</td>
+          <td>{{ money(p.retail_price) }}</td>
+          <td>
+            {% if p.latest_cost is not none %}
+              {{ money(p.latest_cost) }}
+              <span style="color:var(--muted)">(v{{ p.latest_version }}
+                {% if p.latest_status == 'final' %}<span class="badge badge-ok">final</span>
+                {% else %}<span class="badge badge-warn">draft</span>{% endif %})</span>
+            {% else %}<span style="color:var(--muted)">—</span>{% endif %}
+          </td>
+          <td>{{ money(p.latest_gp) }}</td>
+          <td>{{ '%.2f%%'|format(p.latest_customer_gp_pct * 100) if p.latest_customer_gp_pct is not none else '—' }}</td>
+          <td style="text-align:right;white-space:nowrap">
+            <a class="btn btn-primary btn-sm" href="/admin/costing/products/{{ p.id }}/cost">Calculator</a>
+            <details style="display:inline-block;text-align:left">
+              <summary style="display:inline">Edit</summary>
+              <form method="post" action="/admin/costing/products" style="margin-top:10px">
+                <input type="hidden" name="product_id" value="{{ p.id }}">
+                <div class="row row-3">
+                  <div class="field"><label>Name</label><input type="text" name="name" value="{{ p.name }}" required></div>
+                  <div class="field"><label>EAN</label><input type="text" name="ean" value="{{ p.ean or '' }}"></div>
+                  <div class="field"><label>UPT</label><input type="number" name="units_per_tray" value="{{ p.units_per_tray }}" min="0" step="1"></div>
+                </div>
+                <div class="row row-3">
+                  <div class="field"><label>Selling</label><input type="number" name="selling_price" step="any" value="{{ p.selling_price if p.selling_price is not none else '' }}"></div>
+                  <div class="field"><label>Customer price</label><input type="number" name="retail_price" step="any" value="{{ p.retail_price if p.retail_price is not none else '' }}"></div>
+                  <div class="field"><label>Active</label><input type="checkbox" name="active" {% if p.active %}checked{% endif %} style="width:auto"></div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">Save changes</button>
+              </form>
+            </details>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    </div>
+  </details>
 </div>
 {% endblock %}

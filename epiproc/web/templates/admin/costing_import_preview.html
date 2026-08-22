@@ -27,11 +27,7 @@
     <textarea name="payload" hidden aria-hidden="true">{{ payload_json }}</textarea>
     <input type="hidden" name="filename" value="{{ filename }}">
     <input type="hidden" name="staging" value="{{ staging_name }}">
-    <label style="display:flex;gap:8px;align-items:center;margin:10px 0;font-size:13px">
-      <input type="checkbox" name="finalise" value="1" style="width:auto">
-      Finalise these drafts immediately — publish to the customer dashboard
-      (off = saved as drafts for review, nothing published)
-    </label>
+    <input type="hidden" name="finalise" value="1">
     <button type="submit" class="btn btn-primary"
             data-confirm="Import {{ report.rows|length }} rows?">
       Confirm import
